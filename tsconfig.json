@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "outDir": "dist",
+  },
+  "include": [
+    "src/**/*.ts",
+  ],
+}
