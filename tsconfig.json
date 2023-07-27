@@ -1,10 +1,18 @@
 {
   "compilerOptions": {
-    "types": ["jest", "node"],
+    "target": "es2017",
+    "module": "ES2020",
+    "lib": ["dom", "es2017"],
+    "composite": true,
+    "declaration": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "moduleResolution": "node",
-    "outDir": "dist",
+    "outDir": "lib/esm",
+    "rootDir": "./src",
+    "sourceMap": true,
+    "inlineSources": true,
+    "strict": true,
   },
   "include": [
     "src/**/*.ts",
