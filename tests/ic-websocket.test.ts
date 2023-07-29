@@ -58,6 +58,23 @@ describe("IcWebsocket class", () => {
     mockWsServer.close();
   });
 
+  it("throws an error if the WebSocket Gateway is not available", async () => {
+    const icWs = new IcWebSocket("ws://localhost:1234", undefined, {
+      ...icWebsocketConfig,
+      persistKey: false,
+    });
+
+    await expect(new Promise<void>((resolve, reject) => {
+      icWs.onopen = () => {
+        resolve();
+      };
+
+      icWs.onerror = (err) => {
+        reject(err);
+      };
+    })).rejects.toBeTruthy();
+  });
+
   it("throws an error if the canisterActor does not implement ws_register", async () => {
     const icWsConfig: any = {
       ...icWebsocketConfig,
