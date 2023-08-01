@@ -1,0 +1,22 @@
+name: ic-websocket-sdk-js tests
+
+# only run when a commit is pushed to the main branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  unit-and-integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: "npm"
+          cache-dependency-path: "package-lock.json"
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
