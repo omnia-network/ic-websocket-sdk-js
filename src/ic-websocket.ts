@@ -7,6 +7,7 @@ import { Principal } from "@dfinity/principal";
 import * as ed from '@noble/ed25519';
 import { isMessageBodyValid } from "./utils";
 import type { ActorService, CanisterWsMessageArguments, ClientPublicKey } from "./actor";
+import logger from "./logger";
 
 const CLIENT_SECRET_KEY_STORAGE_KEY = "ic_websocket_client_secret_key";
 
@@ -89,15 +90,15 @@ export default class IcWebSocket<T extends ActorService> {
       const storedKey = localStorage.getItem(CLIENT_SECRET_KEY_STORAGE_KEY);
 
       if (storedKey) {
-        console.log("Using stored key");
+        logger.debug("[init] Using stored secret key");
         this.secretKey = storedKey;
       } else {
-        console.log("Generating and storing new key");
+        logger.debug("[init] Generating and storing new secret key");
         this.secretKey = ed.utils.randomPrivateKey(); // Generate new key for this websocket connection.
         localStorage.setItem(CLIENT_SECRET_KEY_STORAGE_KEY, ed.etc.bytesToHex(this.secretKey));
       }
     } else {
-      console.log("Generating new key");
+      logger.debug("[init] Generating new secret key");
       this.secretKey = ed.utils.randomPrivateKey(); // Generate new key for this websocket connection.
     }
 
@@ -122,14 +123,15 @@ export default class IcWebSocket<T extends ActorService> {
     try {
       // We send the message directly to the canister, not to the gateway
       const message = await this._makeApplicationMessage(data);
-
       const sendResult = await this.canisterActor.ws_message(message);
+
+      logger.debug("[send] Message sent");
 
       if ("Err" in sendResult) {
         throw new Error(sendResult.Err);
       }
     } catch (error) {
-      console.error("[send] Error:", error);
+      logger.error("[send] Error:", error);
       if (this.onerror) {
         this.onerror.call(this, new ErrorEvent("error", { error }));
       }
@@ -148,16 +150,16 @@ export default class IcWebSocket<T extends ActorService> {
   }
 
   private async _onWsOpen() {
-    console.log("[open] WS opened");
+    logger.debug("[onWsOpen] WebSocket opened, sending first service message");
 
     try {
       // Send the first message
       const wsMessage = await this._makeFirstMessage();
       this.wsInstance.send(wsMessage);
 
-      console.log("[open] First message sent");
+      logger.debug("[onWsOpen] First service message sent");
     } catch (error) {
-      console.error("[open] Error:", error);
+      logger.error("[onWsOpen] Error:", error);
       // if the first message fails, we can't continue
       this.wsInstance.close(3000, "First message failed");
     }
@@ -169,10 +171,10 @@ export default class IcWebSocket<T extends ActorService> {
   private async _onWsMessage(event: MessageEvent<ArrayBuffer>) {
     if (this.nextReceivedNum === 0) {
       // first received message
-      console.log('[message]: first received message content:', event.data);
+      logger.debug("[onWsMessage] First service message received");
       this.nextReceivedNum += 1;
 
-      console.log("[open] Connection opened");
+      logger.info("WebSocket connection established");
 
       // We are ready to send messages 
       this.isConnectionOpen = true;
@@ -181,6 +183,8 @@ export default class IcWebSocket<T extends ActorService> {
         this.onopen.call(this, new Event("open"));
       }
     } else {
+      logger.debug("[onWsMessage] Incoming message received");
+
       const incomingMessage = this._decodeIncomingMessage(event.data);
       const incomingContent = this._getContentFromIncomingMessage(incomingMessage);
 
@@ -197,6 +201,8 @@ export default class IcWebSocket<T extends ActorService> {
       // Increment the next expected sequence number
       this.nextReceivedNum += 1;
 
+      this._inspectIncomingMessageTimestamp(incomingContent);
+
       const isValidMessage = await this._isIncomingMessageValid(incomingMessage);
       if (!isValidMessage) {
         if (this.onerror) {
@@ -205,11 +211,8 @@ export default class IcWebSocket<T extends ActorService> {
         return;
       }
 
-      this._inspectIncomingMessageTimestamp(incomingContent);
-
       // Message has been verified
       const appMsg = this._getApplicationMessageFromIncomingContent(incomingContent);
-      console.log("[message] Message from canister");
 
       if (this.onmessage) {
         this.onmessage.call(this, new MessageEvent("message", {
@@ -220,13 +223,7 @@ export default class IcWebSocket<T extends ActorService> {
   }
 
   private _onWsClose(event: CloseEvent) {
-    if (event.wasClean) {
-      console.log(
-        `[close] Connection closed, code=${event.code} reason=${event.reason}`
-      );
-    } else {
-      console.log("[close] Connection died");
-    }
+    logger.debug(`[onWsClose] WebSocket closed, code=${event.code} reason=${event.reason}`);
 
     if (this.onclose) {
       this.onclose.call(this, event);
@@ -234,7 +231,7 @@ export default class IcWebSocket<T extends ActorService> {
   }
 
   private _onWsError(error: Event) {
-    console.log(`[error]`, error);
+    logger.error("[onWsError] Error:", error);
 
     if (this.onerror) {
       this.onerror.call(this, new ErrorEvent("error", { error }));
@@ -311,14 +308,14 @@ export default class IcWebSocket<T extends ActorService> {
 
   private _isIncomingMessageSequenceNumberValid(incomingContent: ClientIncomingMessageContent): boolean {
     const receivedNum = incomingContent.sequence_num;
-    console.log(`Received message sequence number: ${receivedNum}`)
+    logger.debug("[onWsMessage] Received message with sequence number", receivedNum)
     return receivedNum === this.nextReceivedNum;
   }
 
   private _inspectIncomingMessageTimestamp(incomingContent: ClientIncomingMessageContent) {
-    const time = incomingContent.timestamp;
-    const delaySeconds = (Date.now() * (10 ** 6) - time) / (10 ** 9);
-    console.log(`(time now) - (message timestamp) = ${delaySeconds}s`);
+    const time = BigInt(incomingContent.timestamp) / BigInt(10 ** 6);
+    const delayMilliseconds = BigInt(Date.now()) - time;
+    logger.debug("[onWsMessage] Canister --> client latency(ms):", Number(delayMilliseconds));
   }
 
   private _getApplicationMessageFromIncomingContent(incomingContent: ClientIncomingMessageContent) {

@@ -8,6 +8,7 @@ import {
   reconstruct,
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
+import logger from "./logger";
 
 const areBuffersEqual = (buf1: ArrayBuffer, buf2: ArrayBuffer): boolean => {
   return compare(buf1, buf2) === 0;
@@ -29,7 +30,7 @@ export const isMessageBodyValid = async (
       rootKey: agent.rootKey!
     });
   } catch (error) {
-    console.error("Error creating certificate:", error);
+    logger.error("[certification] Error creating certificate:", error);
     return false;
   }
 
@@ -49,7 +50,7 @@ export const isMessageBodyValid = async (
 
   // First validate that the Tree is as good as the certification.
   if (!areBuffersEqual(witness, reconstructed)) {
-    console.error("Witness != Tree passed in ic-certification");
+    logger.error("[certification] Witness != Tree passed in ic-certification");
     return false;
   }
 
@@ -65,8 +66,8 @@ export const isMessageBodyValid = async (
   if (!treeSha) {
     // The tree returned in the certification header is wrong. Return false.
     // We don't throw here, just invalidate the request.
-    console.error(
-      `Invalid Tree in the header. Does not contain path ${JSON.stringify(
+    logger.error(
+      `[certification] Invalid Tree in the header. Does not contain path ${JSON.stringify(
         path
       )}`
     );
