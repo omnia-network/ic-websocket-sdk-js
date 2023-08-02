@@ -13,7 +13,7 @@ npm install --save https://github.com/omnia-network/ic-websocket-sdk-js.git#<las
 For example, a valid installation command would be:
 
 ```bash
-npm install --save https://github.com/omnia-network/ic-websocket-sdk-js.git#62dcec3437afe35efd7a08ec8d132e544891e2e1
+npm install --save https://github.com/omnia-network/ic-websocket-sdk-js.git#835995b61c04f9b54ac691b1c9abb5a745bd35fc
 ```
 
 This package will soon be published on npm.
