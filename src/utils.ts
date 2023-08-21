@@ -17,7 +17,7 @@ const areBuffersEqual = (buf1: ArrayBuffer, buf2: ArrayBuffer): boolean => {
 export const isMessageBodyValid = async (
   canisterId: Principal,
   path: string,
-  body: Uint8Array,
+  body: Uint8Array | ArrayBuffer,
   certificate: ArrayBuffer,
   tree: ArrayBuffer,
   agent: HttpAgent,
@@ -75,4 +75,4 @@ export const isMessageBodyValid = async (
   }
 
   return !!treeSha && areBuffersEqual(sha, treeSha);
-}
+};

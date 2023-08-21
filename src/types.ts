@@ -1,7 +1,33 @@
+import { Principal } from "@dfinity/principal";
 import type { ActorMethod } from '@dfinity/agent';
 
 export type ClientPublicKey = Uint8Array | number[];
 
+export type ClientOpenMessageContent = {
+  client_key: ClientPublicKey;
+  canister_id: Principal;
+};
+
+export type ClientOpenMessage = {
+  content: ArrayBuffer;
+  sig: ArrayBuffer;
+};
+
+export type ClientIncomingMessage = {
+  key: string;
+  content: ArrayBuffer;
+  cert: ArrayBuffer;
+  tree: ArrayBuffer;
+}
+
+export type WebsocketMessage = {
+  client_key: ClientPublicKey;
+  sequence_num: bigint;
+  timestamp: bigint;
+  message: ArrayBuffer;
+};
+
+// Actor types
 export interface RelayedClientMessage {
   'sig': Uint8Array | number[],
   'content': Uint8Array | number[],
