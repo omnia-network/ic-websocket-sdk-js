@@ -9,22 +9,22 @@ export type ClientOpenMessageContent = {
 };
 
 export type ClientOpenMessage = {
-  content: ArrayBuffer;
-  sig: ArrayBuffer;
+  content: Uint8Array;
+  sig: Uint8Array;
 };
 
 export type ClientIncomingMessage = {
   key: string;
-  content: ArrayBuffer;
-  cert: ArrayBuffer;
-  tree: ArrayBuffer;
+  content: Uint8Array;
+  cert: Uint8Array;
+  tree: Uint8Array;
 }
 
 export type WebsocketMessage = {
   client_key: ClientPublicKey;
   sequence_num: bigint;
   timestamp: bigint;
-  message: ArrayBuffer;
+  message: Uint8Array;
 };
 
 // Actor types

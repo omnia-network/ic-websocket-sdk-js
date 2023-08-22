@@ -1,5 +1,5 @@
 import { fromHex } from "@dfinity/agent";
-import { deserializeClientIncomingMessage, deserializeWebsocketMessage, serializeClientOpenMessage } from "./idl";
+import { deserializeClientIncomingMessage, serializeClientOpenMessage } from "./idl";
 import type { ClientIncomingMessage, ClientOpenMessage, WebsocketMessage } from "./types";
 
 // candid is not deterministic, so these tests might fail in future versions
@@ -22,24 +22,12 @@ describe("Candid IDL utils", () => {
     // dumb serialized message, just to test the deserialization
     const buf = fromHex("4449444c026d7b6c049f93c60271b99adecb0100e4cdf48d0400deb28ee804000101036b6579030405060301020303070809");
 
-    const res = deserializeClientIncomingMessage(buf);
+    const res = deserializeClientIncomingMessage(new Uint8Array(buf));
     expect(res).toMatchObject<ClientIncomingMessage>({
       key: "key",
       content: new Uint8Array([4, 5, 6]),
       cert: new Uint8Array([1, 2, 3]),
       tree: new Uint8Array([7, 8, 9]),
-    });
-  });
-  it("should deserialize the WebsocketMessage", () => {
-    // dumb serialized message, just to test the deserialization
-    const buf = fromHex("4449444c026d7b6c0488ecfba70178ebb49ce90300c7ebc4d00900d6a9bbae0a780101010000000000000003010203030405060200000000000000");
-
-    const res = deserializeWebsocketMessage(buf);
-    expect(res).toMatchObject<WebsocketMessage>({
-      client_key: new Uint8Array([1, 2, 3]),
-      sequence_num: BigInt(1),
-      timestamp: BigInt(2),
-      message: new Uint8Array([4, 5, 6]),
     });
   });
 });

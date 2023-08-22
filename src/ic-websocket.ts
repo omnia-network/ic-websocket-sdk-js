@@ -7,12 +7,17 @@ import { Principal } from "@dfinity/principal";
 import * as ed from '@noble/ed25519';
 import {
   deserializeClientIncomingMessage,
-  deserializeWebsocketMessage,
   serializeClientOpenMessage,
 } from "./idl";
 import logger from "./logger";
 import { isMessageBodyValid } from "./utils";
-import type { ActorService, CanisterWsMessageArguments, ClientIncomingMessage, ClientOpenMessageContent, WebsocketMessage } from "./types";
+import type {
+  ActorService,
+  CanisterWsMessageArguments,
+  ClientIncomingMessage,
+  ClientOpenMessageContent,
+  WebsocketMessage,
+} from "./types";
 
 const CLIENT_SECRET_KEY_STORAGE_KEY = "ic_websocket_client_secret_key";
 
@@ -111,6 +116,10 @@ export default class IcWebSocket<T extends ActorService> {
       throw new Error("Connection is not open");
     }
 
+    if (!(data instanceof Uint8Array)) {
+      throw new Error("Data must be a Uint8Array");
+    }
+
     try {
       // We send the message directly to the canister, not to the gateway
       const message = await this._makeApplicationMessage(data);
@@ -123,9 +132,7 @@ export default class IcWebSocket<T extends ActorService> {
       }
     } catch (error) {
       logger.error("[send] Error:", error);
-      if (this.onerror) {
-        this.onerror.call(this, new ErrorEvent("error", { error }));
-      }
+      this._callOnErrorCallback(new Error(`Error sending message: ${error}`));
     }
   }
 
@@ -170,23 +177,19 @@ export default class IcWebSocket<T extends ActorService> {
       // We are ready to send messages 
       this.isConnectionOpen = true;
 
-      if (this.onopen) {
-        this.onopen.call(this, new Event("open"));
-      }
+      this._callOnOpenCallback();
     } else {
-      logger.debug("[onWsMessage] Incoming message received");
+      logger.debug("[onWsMessage] Incoming message received. Bytes:", event.data.byteLength, "bytes");
 
-      const incomingMessage = this._decodeIncomingMessage(event.data);
+      const rawData = new Uint8Array(event.data);
+      const incomingMessage = this._decodeIncomingMessage(rawData);
       const websocketMessage = this._decodeIncomingMessageContent(incomingMessage);
 
       const isSequenceNumValid = this._isWebsocketMessageSequenceNumberValid(websocketMessage);
       if (!isSequenceNumValid) {
         // TODO: handle out of order messages
-        if (this.onerror) {
-          this.onerror.call(this, new ErrorEvent("error", {
-            error: `Received message sequence number does not match next expected value (${this.nextReceivedNum}). Message ignored.`,
-          }));
-        }
+        logger.error("[onWsMessage] Received message sequence number does not match next expected value. Message ignored.");
+        this._callOnErrorCallback(new Error(`Received message sequence number does not match next expected value (${this.nextReceivedNum}). Message ignored.`));
         return;
       }
       // Increment the next expected sequence number
@@ -196,34 +199,27 @@ export default class IcWebSocket<T extends ActorService> {
 
       const isValidMessage = await this._isIncomingMessageValid(incomingMessage);
       if (!isValidMessage) {
-        if (this.onerror) {
-          this.onerror.call(this, new ErrorEvent("error", { error: "Certificate validation failed" }));
-        }
+        logger.error("[onWsMessage] Certificate validation failed");
+        this._callOnErrorCallback(new Error("Certificate validation failed"));
         return;
       }
 
-      if (this.onmessage) {
-        this.onmessage.call(this, new MessageEvent("message", {
-          data: new Uint8Array(websocketMessage.message),
-        }));
-      }
+      logger.debug("[onWsMessage] Calling onmessage callback");
+      this._callOnMessageCallback(new Uint8Array(websocketMessage.message));
     }
   }
 
   private _onWsClose(event: CloseEvent) {
     logger.debug(`[onWsClose] WebSocket closed, code=${event.code} reason=${event.reason}`);
 
-    if (this.onclose) {
-      this.onclose.call(this, event);
-    }
+    this.isConnectionOpen = false;
+
+    this._callOnCloseCallback(event);
   }
 
   private _onWsError(error: Event) {
     logger.error("[onWsError] Error:", error);
-
-    if (this.onerror) {
-      this.onerror.call(this, new ErrorEvent("error", { error }));
-    }
+    this._callOnErrorCallback(new Error(`WebSocket error: ${error}`));
   }
 
   private async _getPublicKey(): Promise<Uint8Array> {
@@ -240,14 +236,13 @@ export default class IcWebSocket<T extends ActorService> {
     return publicKey;
   }
 
-  private async _getSignedMessage(buf: ArrayBuffer | Uint8Array) {
+  private async _getSignedMessage(buf: Uint8Array) {
     // Sign the message so that the gateway can verify canister and client ids match
-    const toSign = new Uint8Array(buf);
-    const sig = await ed.signAsync(toSign, this.secretKey);
+    const sig = await ed.signAsync(buf, this.secretKey);
 
     // Final signed websocket message
     const message = {
-      content: toSign,
+      content: buf,
       sig: sig,
     };
 
@@ -263,7 +258,7 @@ export default class IcWebSocket<T extends ActorService> {
     }
 
     // Send the first message with client and canister id
-    const contentBytes = Cbor.encode(content);
+    const contentBytes = new Uint8Array(Cbor.encode(content));
     const signedMessage = await this._getSignedMessage(contentBytes);
 
     // Serialize the open message to send it through the websocket
@@ -272,13 +267,13 @@ export default class IcWebSocket<T extends ActorService> {
     return wsMessage;
   }
 
-  private _decodeIncomingMessage(buf: ArrayBuffer): ClientIncomingMessage {
+  private _decodeIncomingMessage(buf: Uint8Array): ClientIncomingMessage {
     return deserializeClientIncomingMessage(buf);
   }
 
   private async _isIncomingMessageValid(incomingMessage: ClientIncomingMessage): Promise<boolean> {
     const key = incomingMessage.key;
-    const content = new Uint8Array(incomingMessage.content);
+    const content = new Uint8Array(incomingMessage.content); // make sure it's a Uint8Array
     const cert = incomingMessage.cert;
     const tree = incomingMessage.tree;
 
@@ -289,7 +284,7 @@ export default class IcWebSocket<T extends ActorService> {
   }
 
   private _decodeIncomingMessageContent(incomingMessage: ClientIncomingMessage): WebsocketMessage {
-    const websocketMessage = deserializeWebsocketMessage(incomingMessage.content);
+    const websocketMessage = Cbor.decode<WebsocketMessage>(incomingMessage.content);
 
     return websocketMessage;
   }
@@ -297,7 +292,7 @@ export default class IcWebSocket<T extends ActorService> {
   private _isWebsocketMessageSequenceNumberValid(incomingContent: WebsocketMessage): boolean {
     const receivedNum = incomingContent.sequence_num;
     logger.debug("[onWsMessage] Received message with sequence number", receivedNum)
-    return receivedNum === BigInt(this.nextReceivedNum);
+    return BigInt(receivedNum) === BigInt(this.nextReceivedNum);
   }
 
   private _inspectWebsocketMessageTimestamp(incomingContent: WebsocketMessage) {
@@ -306,16 +301,48 @@ export default class IcWebSocket<T extends ActorService> {
     logger.debug("[onWsMessage] Canister --> client latency(ms):", Number(delayMilliseconds));
   }
 
-  private async _makeApplicationMessage(content: ArrayBuffer): Promise<CanisterWsMessageArguments> {
+  private async _makeApplicationMessage(content: Uint8Array): Promise<CanisterWsMessageArguments> {
     const publicKey = await this._getPublicKey();
 
     return {
       msg: {
         DirectlyFromClient: {
           client_key: publicKey,
-          message: new Uint8Array(content),
+          message: content,
         },
       }
     };
+  }
+
+  private _callOnOpenCallback() {
+    if (this.onopen) {
+      this.onopen.call(this, new Event("open"));
+    } else {
+      logger.warn("[onopen] No onopen callback defined");
+    }
+  }
+
+  private _callOnMessageCallback(data: Uint8Array) {
+    if (this.onmessage) {
+      this.onmessage.call(this, new MessageEvent("message", { data }));
+    } else {
+      logger.warn("[onmessage] No onmessage callback defined");
+    }
+  }
+
+  private _callOnErrorCallback(error: Error) {
+    if (this.onerror) {
+      this.onerror.call(this, new ErrorEvent("error", { error }));
+    } else {
+      logger.warn("[onerror] No onerror callback defined");
+    }
+  }
+
+  private _callOnCloseCallback(event: CloseEvent) {
+    if (this.onclose) {
+      this.onclose.call(this, event);
+    } else {
+      logger.warn("[onclose] No onclose callback defined");
+    }
   }
 }
