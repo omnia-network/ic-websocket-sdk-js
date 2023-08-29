@@ -11,6 +11,7 @@
   "main": "./lib/cjs/index",
   "module": "./lib/esm/index",
   "scripts": {
+    "preinstall": "cd agent-js && npm install && npm run build -w packages/principal -w packages/candid -w packages/agent",
     "build": "tsc -b && tsc -p tsconfig-cjs.json",
     "postinstall": "npm run build",
     "test": "LOG_LEVEL=debug jest"
@@ -50,10 +51,10 @@
     "last 2 edge version"
   ],
   "dependencies": {
-    "@dfinity/agent": "^0.18.1",
-    "@dfinity/candid": "^0.18.1",
-    "@dfinity/identity-secp256k1": "^0.18.1",
-    "@dfinity/principal": "^0.18.1",
+    "@dfinity/agent": "file:agent-js/packages/agent",
+    "@dfinity/candid": "^0.19.2",
+    "@dfinity/identity-secp256k1": "^0.19.2",
+    "@dfinity/principal": "^0.19.2",
     "@noble/ed25519": "^2.0.0",
     "loglevel": "^1.8.1"
   }

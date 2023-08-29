@@ -1,0 +1,3 @@
+[submodule "agent-js"]
+	path = agent-js
+	url = https://github.com/omnia-network/agent-js
