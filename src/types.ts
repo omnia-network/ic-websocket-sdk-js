@@ -1,64 +1,16 @@
-import { Principal } from "@dfinity/principal";
-import type { ActorMethod } from '@dfinity/agent';
-
-export type ClientPublicKey = Uint8Array | number[];
-
-export type ClientOpenMessageContent = {
-  client_key: ClientPublicKey;
-  canister_id: Principal;
-};
-
-export type ClientOpenMessage = {
-  content: Uint8Array;
-  sig: Uint8Array;
-};
-
 export type ClientIncomingMessage = {
   key: string;
-  content: Uint8Array;
-  cert: Uint8Array;
-  tree: Uint8Array;
-}
-
-export type WebsocketMessage = {
-  client_key: ClientPublicKey;
-  sequence_num: bigint;
-  timestamp: bigint;
-  message: Uint8Array;
+  content: ArrayBuffer;
+  cert: ArrayBuffer;
+  tree: ArrayBuffer;
 };
 
-// Actor types
-export interface RelayedClientMessage {
-  'sig': Uint8Array | number[],
-  'content': Uint8Array | number[],
-}
-
-export interface DirectClientMessage {
-  'client_key': ClientPublicKey,
-  'message': Uint8Array | number[],
-}
-
-export type CanisterIncomingMessage = {
-  'IcWebSocketEstablished': ClientPublicKey
-} |
-{ 'DirectlyFromClient': DirectClientMessage } |
-{ 'RelayedByGateway': RelayedClientMessage };
-
-export interface CanisterWsMessageArguments { 'msg': CanisterIncomingMessage }
-export type CanisterWsMessageResult = { 'Ok': null } |
-{ 'Err': string };
-
-export interface CanisterWsRegisterArguments { 'client_key': ClientPublicKey }
-export type CanisterWsRegisterResult = { 'Ok': null } |
-{ 'Err': string };
-
-export type ActorService = {
-  'ws_message': ActorMethod<
-    [CanisterWsMessageArguments],
-    CanisterWsMessageResult
-  >,
-  'ws_register': ActorMethod<
-    [CanisterWsRegisterArguments],
-    CanisterWsRegisterResult
-  >,
+export const isClientIncomingMessage = (arg: unknown): arg is ClientIncomingMessage => {
+  return (
+    arg instanceof Object &&
+    typeof (arg as ClientIncomingMessage).key === "string" &&
+    (arg as ClientIncomingMessage).content instanceof ArrayBuffer &&
+    (arg as ClientIncomingMessage).cert instanceof ArrayBuffer &&
+    (arg as ClientIncomingMessage).tree instanceof ArrayBuffer
+  );
 };
