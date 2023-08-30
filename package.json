@@ -12,7 +12,7 @@
   "module": "./lib/esm/index",
   "scripts": {
     "build": "tsc -b && tsc -p tsconfig-cjs.json",
-    "postinstall": "cd node_modules/@dfinity/agent-monorepo && npm install && npm run build -w packages/principal -w packages/candid -w packages/agent && cd ../../.. && npm run build",
+    "postinstall": "npm run build",
     "test": "LOG_LEVEL=debug jest"
   },
   "devDependencies": {
