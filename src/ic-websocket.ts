@@ -40,14 +40,15 @@ type WsParameters = ConstructorParameters<typeof WebSocket>;
 export default class IcWebSocket {
   public readonly canisterId: Principal;
   private readonly _httpAgent: HttpAgent;
-  private readonly _wsAgent: WsAgent;
-  private readonly _wsActor: ActorSubclass<_WS_CANISTER_SERVICE>;
+  private _wsAgent: WsAgent | null = null;
+  private _wsActor: ActorSubclass<_WS_CANISTER_SERVICE> | null = null;
   private readonly _wsInstance: WebSocket;
   private readonly _identity: SignIdentity;
   private readonly _isAnonymous: boolean;
   private _incomingSequenceNum = BigInt(0);
   private _outgoingSequenceNum = BigInt(0);
   private _isConnectionEstablished = false;
+  private _receivedMessagesQueue: Uint8Array[] = [];
 
   onclose: ((this: IcWebSocket, ev: CloseEvent) => any) | null = null;
   onerror: ((this: IcWebSocket, ev: ErrorEvent) => any) | null = null;
@@ -75,34 +76,22 @@ export default class IcWebSocket {
       this._isAnonymous = true;
     }
 
-    this._wsInstance = new WebSocket(url, protocols); // Gateway address. Here localhost to reproduce the demo.
-    this._wsInstance.binaryType = "arraybuffer";
-    this._bindWsEvents();
+    if (!config.networkUrl) {
+      throw new Error("Network url is required");
+    }
 
     this._httpAgent = new HttpAgent({
       host: config.networkUrl,
       identity: this._identity,
     });
 
-    // wait for the WebSocket to be open before creating the WsAgent
-    // with a timer to avoid blocking the main thread
-    this._waitForWsOpen();
-
-    this._wsAgent = new WsAgent({
-      host: config.networkUrl,
-      identity: this._identity,
-      httpAgent: this._httpAgent,
-      ws: this._wsInstance,
-    });
-
     if (this._httpAgent.isLocal()) {
       void this._httpAgent.fetchRootKey();
-      void this._wsAgent.fetchRootKey();
     }
 
-    this._wsActor = createWsActor(this.canisterId, {
-      agent: this._wsAgent,
-    });
+    this._wsInstance = new WebSocket(url, protocols); // Gateway address. Here localhost to reproduce the demo.
+    this._wsInstance.binaryType = "arraybuffer";
+    this._bindWsEvents();
   }
 
   public async send(data: Uint8Array) {
@@ -117,7 +106,7 @@ export default class IcWebSocket {
     try {
       // We send the message via WebSocket to the gateway, which relays it to the canister
       const message = this._makeApplicationMessage(data);
-      const sendResult = await this._wsActor.ws_message(message);
+      const sendResult = await this._wsActor!.ws_message(message);
 
       if ("Err" in sendResult) {
         throw new Error(sendResult.Err);
@@ -144,17 +133,6 @@ export default class IcWebSocket {
     return this._isConnectionEstablished;
   }
 
-  private _waitForWsOpen() {
-    const now = Date.now();
-    const maxWaitTime = 30000; // ms
-    // TODO: find a better way to wait for the WebSocket to be open
-    while (this._wsInstance.readyState !== WebSocket.OPEN) {
-      if (Date.now() - now > maxWaitTime) {
-        throw new Error("WebSocket did not open in time");
-      }
-    }
-  }
-
   private _bindWsEvents() {
     this._wsInstance.onopen = this._onWsOpen.bind(this);
     this._wsInstance.onmessage = this._onWsMessage.bind(this);
@@ -163,6 +141,20 @@ export default class IcWebSocket {
   }
 
   private async _onWsOpen() {
+    this._wsAgent = new WsAgent({
+      identity: this._identity,
+      httpAgent: this._httpAgent,
+      ws: this._wsInstance,
+    });
+
+    if (this._httpAgent.isLocal()) {
+      void this._wsAgent.fetchRootKey();
+    }
+
+    this._wsActor = createWsActor(this.canisterId, {
+      agent: this._wsAgent,
+    });
+
     logger.debug("[onWsOpen] WebSocket opened, sending open message");
 
     try {
@@ -179,6 +171,7 @@ export default class IcWebSocket {
       }
 
       this._isConnectionEstablished = true;
+      this._processReceivedMessagesQueue();
 
       logger.debug("[onWsOpen] Open message sent, connection established");
       
@@ -191,11 +184,6 @@ export default class IcWebSocket {
   }
 
   private async _onWsMessage(event: MessageEvent<ArrayBuffer>) {
-    if (!this._isConnectionEstablished) {
-      logger.debug("[onWsMessage] Connection is not established, ignoring message");
-      return;
-    }
-
     const incomingMessage = this._decodeIncomingMessage(event.data);
     // Check if the incoming message is a ClientIncomingMessage
     if (!isClientIncomingMessage(incomingMessage)) {
@@ -206,6 +194,13 @@ export default class IcWebSocket {
     logger.debug("[onWsMessage] Incoming message received. Bytes:", event.data.byteLength, "bytes");
 
     const websocketMessage = this._decodeIncomingMessageContent(incomingMessage);
+
+    const isValidMessage = await this._isIncomingMessageValid(incomingMessage);
+    if (!isValidMessage) {
+      logger.error("[onWsMessage] Certificate validation failed");
+      this._callOnErrorCallback(new Error("Certificate validation failed"));
+      return;
+    }
 
     const isSequenceNumValid = this._isWebsocketMessageSequenceNumberValid(websocketMessage);
     if (!isSequenceNumValid) {
@@ -219,14 +214,8 @@ export default class IcWebSocket {
 
     this._inspectWebsocketMessageTimestamp(websocketMessage);
 
-    const isValidMessage = await this._isIncomingMessageValid(incomingMessage);
-    if (!isValidMessage) {
-      logger.error("[onWsMessage] Certificate validation failed");
-      this._callOnErrorCallback(new Error("Certificate validation failed"));
-      return;
-    }
-
-    this._callOnMessageCallback(new Uint8Array(websocketMessage.content));
+    this._addReceivedMessageToQueue(new Uint8Array(websocketMessage.content));
+    this._processReceivedMessagesQueue();
   }
 
   private _onWsClose(event: CloseEvent) {
@@ -240,6 +229,25 @@ export default class IcWebSocket {
   private _onWsError(error: Event) {
     logger.error("[onWsError] Error:", error);
     this._callOnErrorCallback(new Error(`WebSocket error: ${error}`));
+  }
+
+  private _addReceivedMessageToQueue(messageContent: Uint8Array) {
+    this._receivedMessagesQueue.push(messageContent);
+  }
+
+  private _processReceivedMessagesQueue() {
+    if (!this._isConnectionEstablished) {
+      return;
+    }
+
+    while (this._receivedMessagesQueue.length > 0) {
+      const messageContent = this._receivedMessagesQueue.shift();
+      if (!messageContent) {
+        break;
+      }
+
+      this._callOnMessageCallback(messageContent);
+    }
   }
 
   private _decodeIncomingMessage(buf: ArrayBuffer): ClientIncomingMessage {
