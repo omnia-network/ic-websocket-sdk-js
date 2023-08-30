@@ -11,9 +11,8 @@
   "main": "./lib/cjs/index",
   "module": "./lib/esm/index",
   "scripts": {
-    "preinstall": "cd agent-js && npm install && npm run build -w packages/principal -w packages/candid -w packages/agent",
     "build": "tsc -b && tsc -p tsconfig-cjs.json",
-    "postinstall": "npm run build",
+    "postinstall": "cd node_modules/@dfinity/agent-monorepo && npm install && npm run build -w packages/principal -w packages/candid -w packages/agent && cd ../../.. && npm run build",
     "test": "LOG_LEVEL=debug jest"
   },
   "devDependencies": {
@@ -51,7 +50,7 @@
     "last 2 edge version"
   ],
   "dependencies": {
-    "@dfinity/agent": "file:agent-js/packages/agent",
+    "@dfinity/agent": "https://github.com/omnia-network/agent-js/releases/download/v0.19.2-b2dcc50/dfinity-agent-0.19.2.tgz",
     "@dfinity/candid": "^0.19.2",
     "@dfinity/identity-secp256k1": "^0.19.2",
     "@dfinity/principal": "^0.19.2",
