@@ -45,7 +45,7 @@ export default class IcWebSocket {
   private readonly _wsInstance: WebSocket;
   private readonly _identity: SignIdentity;
   private readonly _isAnonymous: boolean;
-  private _incomingSequenceNum = BigInt(0);
+  private _incomingSequenceNum = BigInt(1);
   private _outgoingSequenceNum = BigInt(0);
   private _isConnectionEstablished = false;
   private _receivedMessagesQueue: Uint8Array[] = [];
@@ -96,7 +96,7 @@ export default class IcWebSocket {
 
   public async send(data: Uint8Array) {
     if (!this._isConnectionEstablished) {
-      throw new Error("Connection is not open");
+      throw new Error("Connection is not established yet");
     }
 
     if (!(data instanceof Uint8Array)) {
@@ -105,14 +105,14 @@ export default class IcWebSocket {
 
     try {
       // We send the message via WebSocket to the gateway, which relays it to the canister
+      this._outgoingSequenceNum++;
       const message = this._makeApplicationMessage(data);
       const sendResult = await this._wsActor!.ws_message(message);
 
       if ("Err" in sendResult) {
+        this._outgoingSequenceNum--;
         throw new Error(sendResult.Err);
       }
-
-      this._outgoingSequenceNum++;
 
       logger.debug("[send] Message sent");
     } catch (error) {
