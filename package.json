@@ -50,7 +50,7 @@
     "last 2 edge version"
   ],
   "dependencies": {
-    "@dfinity/agent": "https://github.com/omnia-network/agent-js/releases/download/v0.19.2-f3e52df/dfinity-agent-0.19.2.tgz",
+    "@dfinity/agent": "https://github.com/omnia-network/agent-js/releases/download/v0.19.2-99f3431/dfinity-agent-0.19.2.tgz",
     "@dfinity/candid": "^0.19.2",
     "@dfinity/identity-secp256k1": "^0.19.2",
     "@dfinity/principal": "^0.19.2",
