@@ -166,7 +166,7 @@ export default class IcWebSocket {
       }
 
       const result = openResult.Ok;
-      if (result.client_principal !== this.getPrincipal()) {
+      if (result.client_principal.compareTo(this.getPrincipal()) !== "eq") {
         throw new Error("Client principal does not match");
       }
 
