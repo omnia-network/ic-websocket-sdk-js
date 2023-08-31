@@ -48,7 +48,9 @@ export default class IcWebSocket {
   private _incomingSequenceNum = BigInt(1);
   private _outgoingSequenceNum = BigInt(0);
   private _isConnectionEstablished = false;
-  private _receivedMessagesQueue: Uint8Array[] = [];
+  private _incomingMessagesQueue: Uint8Array[] = [];
+  private _outgoingMessagesQueue: Uint8Array[] = [];
+  private _isProcessingOutgoingMessagesQueue = false;
 
   onclose: ((this: IcWebSocket, ev: CloseEvent) => any) | null = null;
   onerror: ((this: IcWebSocket, ev: ErrorEvent) => any) | null = null;
@@ -94,7 +96,7 @@ export default class IcWebSocket {
     this._bindWsEvents();
   }
 
-  public async send(data: Uint8Array) {
+  public send(data: Uint8Array) {
     if (!this._isConnectionEstablished) {
       throw new Error("Connection is not established yet");
     }
@@ -103,22 +105,8 @@ export default class IcWebSocket {
       throw new Error("Data must be a Uint8Array");
     }
 
-    try {
-      // We send the message via WebSocket to the gateway, which relays it to the canister
-      this._outgoingSequenceNum++;
-      const message = this._makeApplicationMessage(data);
-      const sendResult = await this._wsActor!.ws_message(message);
-
-      if ("Err" in sendResult) {
-        this._outgoingSequenceNum--;
-        throw new Error(sendResult.Err);
-      }
-
-      logger.debug("[send] Message sent");
-    } catch (error) {
-      logger.error("[send] Error:", error);
-      this._callOnErrorCallback(new Error(`Error sending message: ${error}`));
-    }
+    this._addOutgoingMessageToQueue(data);
+    this._processOutgoingMessagesQueue();
   }
 
   public getPrincipal(): Principal {
@@ -171,11 +159,11 @@ export default class IcWebSocket {
       }
 
       this._isConnectionEstablished = true;
-      this._processReceivedMessagesQueue();
 
       logger.debug("[onWsOpen] Open message sent, connection established");
       
       this._callOnOpenCallback();
+      this._processIncomingMessagesQueue();
     } catch (error) {
       logger.error("[onWsOpen] Error:", error);
       // if the first message fails, we can't continue
@@ -214,8 +202,8 @@ export default class IcWebSocket {
 
     this._inspectWebsocketMessageTimestamp(websocketMessage);
 
-    this._addReceivedMessageToQueue(new Uint8Array(websocketMessage.content));
-    this._processReceivedMessagesQueue();
+    this._addIncomingMessageToQueue(new Uint8Array(websocketMessage.content));
+    this._processIncomingMessagesQueue();
   }
 
   private _onWsClose(event: CloseEvent) {
@@ -231,23 +219,78 @@ export default class IcWebSocket {
     this._callOnErrorCallback(new Error(`WebSocket error: ${error}`));
   }
 
-  private _addReceivedMessageToQueue(messageContent: Uint8Array) {
-    this._receivedMessagesQueue.push(messageContent);
+  private _addIncomingMessageToQueue(messageContent: Uint8Array) {
+    this._incomingMessagesQueue.push(messageContent);
   }
 
-  private _processReceivedMessagesQueue() {
+  private _processIncomingMessagesQueue() {
     if (!this._isConnectionEstablished) {
       return;
     }
 
-    while (this._receivedMessagesQueue.length > 0) {
-      const messageContent = this._receivedMessagesQueue.shift();
+    while (this._incomingMessagesQueue.length > 0) {
+      const messageContent = this._incomingMessagesQueue.shift();
       if (!messageContent) {
         break;
       }
 
       this._callOnMessageCallback(messageContent);
     }
+  }
+
+  private _addOutgoingMessageToQueue(messageContent: Uint8Array) {
+    this._outgoingMessagesQueue.push(messageContent);
+  }
+
+  private _processOutgoingMessagesQueue() {
+    if (!this._isConnectionEstablished) {
+      return;
+    }
+
+    if (this._isProcessingOutgoingMessagesQueue) {
+      return;
+    }
+
+    this._isProcessingOutgoingMessagesQueue = true;
+    this._processNextOutgoingMessage();
+  }
+
+  private _processNextOutgoingMessage() {
+    if (!this._isConnectionEstablished) {
+      return;
+    }
+
+    if (this._outgoingMessagesQueue.length === 0) {
+      // the queue is empty, we can stop processing
+      this._isProcessingOutgoingMessagesQueue = false;
+      return;
+    }
+
+    const messageContent = this._outgoingMessagesQueue.shift();
+
+    this._outgoingSequenceNum++;
+    const message = this._makeWsMessageArguments(messageContent!);
+    // we send the message via WebSocket to the gateway, which relays it to the canister
+    this._sendMessage(message)
+      .then(() => {
+        // if the message was sent successfully, we can continue with the next message
+        this._processNextOutgoingMessage();
+      })
+      .catch((error) => {
+        // the ws agent already tries 3 times under the hood, so if we get an error here, we can't continue
+        // TODO: here we could send the message directly to the canister, to check if the gateway is blocking the message
+        this._callOnErrorCallback(new Error(`Message sending failed: ${error}`));
+        this._wsInstance.close(3000, "Message sending failed");
+      });
+  }
+
+  private async _sendMessage(message: CanisterWsMessageArguments): Promise<void> {
+    const sendResult = await this._wsActor!.ws_message(message);
+    if ("Err" in sendResult) {
+      throw new Error(sendResult.Err);
+    }
+
+    logger.debug("[send] Message sent");
   }
 
   private _decodeIncomingMessage(buf: ArrayBuffer): ClientIncomingMessage {
@@ -284,12 +327,12 @@ export default class IcWebSocket {
     logger.debug("[onWsMessage] Canister --> client latency(ms):", Number(delayMilliseconds));
   }
 
-  private _makeApplicationMessage(content: Uint8Array): CanisterWsMessageArguments {
+  private _makeWsMessageArguments(content: Uint8Array): CanisterWsMessageArguments {
     const outgoingMessage: WebsocketMessage = {
       client_principal: this.getPrincipal(),
-        sequence_num: this._outgoingSequenceNum,
-        timestamp: BigInt(Date.now()) * BigInt(10 ** 6),
-        content,
+      sequence_num: this._outgoingSequenceNum,
+      timestamp: BigInt(Date.now()) * BigInt(10 ** 6),
+      content,
     };
 
     return {
