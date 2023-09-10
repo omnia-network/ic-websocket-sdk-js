@@ -1,16 +1,18 @@
 import {
-  ActorSubclass,
   Cbor,
   HttpAgent,
   SignIdentity,
-  WsAgent
+  WsAgent,
+  polling
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { generateRandomIdentity } from "./identity";
 import {
+  CanisterServiceMessageIdl,
   CanisterWsMessageArguments,
   WebsocketMessage,
   _WS_CANISTER_SERVICE,
+  decodeCanisterServiceMessage,
 } from "./idl";
 import logger from "./logger";
 import { isMessageBodyValid } from "./utils";
@@ -18,7 +20,8 @@ import {
   isClientIncomingMessage,
   type ClientIncomingMessage,
 } from "./types";
-import { createWsActor } from "./actor";
+import { callWsMessage, callWsOpen, pollForWsOpenResponse } from "./actor";
+import { IDL } from "@dfinity/candid";
 
 export type IcWebSocketConfig = {
   /**
@@ -41,7 +44,6 @@ export default class IcWebSocket {
   public readonly canisterId: Principal;
   private readonly _httpAgent: HttpAgent;
   private _wsAgent: WsAgent | null = null;
-  private _wsActor: ActorSubclass<_WS_CANISTER_SERVICE> | null = null;
   private readonly _wsInstance: WebSocket;
   private readonly _identity: SignIdentity;
   private readonly _isAnonymous: boolean;
@@ -139,31 +141,30 @@ export default class IcWebSocket {
       void this._wsAgent.fetchRootKey();
     }
 
-    this._wsActor = createWsActor(this.canisterId, {
-      agent: this._wsAgent,
-    });
-
     logger.debug("[onWsOpen] WebSocket opened, sending open message");
 
     try {
       // Call the canister's ws_open method
-      const openResult = await this._wsActor.ws_open({ is_anonymous: this._isAnonymous });
+      const { requestId, response } = await callWsOpen(
+        this.canisterId,
+        this._wsAgent,
+        {
+          is_anonymous: this._isAnonymous,
+        }
+      );
 
-      if ("Err" in openResult) {
-        throw new Error(openResult.Err);
+      // if the response is not ok, we have to execute a read_state to see what went wrong
+      if (!response.ok || response.body) {
+        const canisterError = await pollForWsOpenResponse(
+          this.canisterId,
+          this._wsAgent,
+          requestId,
+        );
+
+        throw new Error(canisterError);
       }
 
-      const result = openResult.Ok;
-      if (result.client_principal.compareTo(this.getPrincipal()) !== "eq") {
-        throw new Error("Client principal does not match");
-      }
-
-      this._isConnectionEstablished = true;
-
-      logger.debug("[onWsOpen] Open message sent, connection established");
-      
-      this._callOnOpenCallback();
-      this._processIncomingMessagesQueue();
+      logger.debug("[onWsOpen] Open message sent, waiting for first open message from canister");
     } catch (error) {
       logger.error("[onWsOpen] Error:", error);
       // if the first message fails, we can't continue
@@ -200,10 +201,38 @@ export default class IcWebSocket {
     // Increment the next expected sequence number
     this._incomingSequenceNum++;
 
+    // handle the case in which the content is a service message
+    if (websocketMessage.is_service_message) {
+      return this._handleServiceMessage(websocketMessage.content as Uint8Array);
+    }
+
     this._inspectWebsocketMessageTimestamp(websocketMessage);
 
     this._addIncomingMessageToQueue(new Uint8Array(websocketMessage.content));
     this._processIncomingMessagesQueue();
+  }
+
+  private _handleServiceMessage(content: Uint8Array) {
+    try {
+      const serviceMessage = decodeCanisterServiceMessage(content as Uint8Array);
+      if ("OpenMessage" in serviceMessage) {
+        if (serviceMessage.OpenMessage.client_principal.compareTo(this.getPrincipal()) !== "eq") {
+          throw new Error("Client principal does not match");
+        }
+
+        this._isConnectionEstablished = true;
+        this._callOnOpenCallback();
+        this._processIncomingMessagesQueue();
+      } else if ("AckMessage" in serviceMessage) {
+        // TODO: handle ack message
+      } else {
+        throw new Error("Invalid service message");
+      }
+    } catch (error) {
+      logger.error("[onWsMessage] Service message error:", error);
+      // if a service message fails, we can't continue
+      this._wsInstance.close(4000, "Service message error");
+    }
   }
 
   private _onWsClose(event: CloseEvent) {
@@ -278,17 +307,19 @@ export default class IcWebSocket {
       })
       .catch((error) => {
         // the ws agent already tries 3 times under the hood, so if we get an error here, we can't continue
-        // TODO: here we could send the message directly to the canister, to check if the gateway is blocking the message
         this._callOnErrorCallback(new Error(`Message sending failed: ${error}`));
         this._wsInstance.close(3000, "Message sending failed");
       });
   }
 
   private async _sendMessage(message: CanisterWsMessageArguments): Promise<void> {
-    const sendResult = await this._wsActor!.ws_message(message);
-    if ("Err" in sendResult) {
-      throw new Error(sendResult.Err);
-    }
+    // we don't need to wait for the response,
+    // as we'll receive the ack message via WebSocket from the canister
+    await callWsMessage(
+      this.canisterId,
+      this._wsAgent!,
+      message
+    );
 
     logger.debug("[send] Message sent");
   }
@@ -327,12 +358,13 @@ export default class IcWebSocket {
     logger.debug("[onWsMessage] Canister --> client latency(ms):", Number(delayMilliseconds));
   }
 
-  private _makeWsMessageArguments(content: Uint8Array): CanisterWsMessageArguments {
+  private _makeWsMessageArguments(content: Uint8Array, isServiceMessage = false): CanisterWsMessageArguments {
     const outgoingMessage: WebsocketMessage = {
       client_principal: this.getPrincipal(),
       sequence_num: this._outgoingSequenceNum,
       timestamp: BigInt(Date.now()) * BigInt(10 ** 6),
       content,
+      is_service_message: isServiceMessage,
     };
 
     return {
