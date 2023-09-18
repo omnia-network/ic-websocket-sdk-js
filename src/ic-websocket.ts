@@ -145,9 +145,7 @@ export default class IcWebSocket {
       await callCanisterWsOpen(
         this.canisterId,
         this._wsAgent,
-        {
-          is_anonymous: this._isAnonymous,
-        }
+        {}
       );
 
       logger.debug("[onWsOpen] Open message sent, waiting for first open message from canister");
@@ -212,7 +210,7 @@ export default class IcWebSocket {
       } else if ("AckMessage" in serviceMessage) {
         // TODO: handle ack message
       } else {
-        throw new Error("Invalid service message");
+        throw new Error("Invalid service message from canister");
       }
     } catch (error) {
       logger.error("[onWsMessage] Service message error:", error);
