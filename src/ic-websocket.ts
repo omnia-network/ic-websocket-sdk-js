@@ -5,7 +5,6 @@ import {
   WsAgent,
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
-import { generateRandomIdentity } from "./identity";
 import {
   CanisterWsMessageArguments,
   WebsocketMessage,
@@ -28,7 +27,7 @@ export type IcWebSocketConfig = {
   /**
    * The identity to use for signing messages. If empty, a new random temporary identity will be generated.
    */
-  identity?: SignIdentity,
+  identity: SignIdentity,
   /**
    * The IC network url to use for the underlying agent. It can be a local replica URL (e.g. http://localhost:4943) or the IC mainnet URL (https://icp0.io).
    */
@@ -43,7 +42,6 @@ export default class IcWebSocket {
   private _wsAgent: WsAgent | null = null;
   private readonly _wsInstance: WebSocket;
   private readonly _identity: SignIdentity;
-  private readonly _isAnonymous: boolean;
   private _incomingSequenceNum = BigInt(1);
   private _outgoingSequenceNum = BigInt(0);
   private _isConnectionEstablished = false;
@@ -65,17 +63,15 @@ export default class IcWebSocket {
   constructor(url: WsParameters[0], protocols: WsParameters[1], config: IcWebSocketConfig) {
     this.canisterId = Principal.fromText(config.canisterId);
 
-    if (config.identity) {
-      if (!(config.identity instanceof SignIdentity)) {
-        throw new Error("Identity must be a SignIdentity");
-      }
-
-      this._identity = config.identity;
-      this._isAnonymous = false;
-    } else {
-      this._identity = generateRandomIdentity();
-      this._isAnonymous = true;
+    if (!config.identity) {
+      throw new Error("Identity is required");
     }
+
+    if (!(config.identity instanceof SignIdentity)) {
+      throw new Error("Identity must be a SignIdentity");
+    }
+
+    this._identity = config.identity;
 
     if (!config.networkUrl) {
       throw new Error("Network url is required");
