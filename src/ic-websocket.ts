@@ -3,12 +3,10 @@ import {
   HttpAgent,
   SignIdentity,
   WsAgent,
-  polling
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { generateRandomIdentity } from "./identity";
 import {
-  CanisterServiceMessageIdl,
   CanisterWsMessageArguments,
   WebsocketMessage,
   _WS_CANISTER_SERVICE,
@@ -20,8 +18,7 @@ import {
   isClientIncomingMessage,
   type ClientIncomingMessage,
 } from "./types";
-import { callWsMessage, callWsOpen, pollForWsOpenResponse } from "./actor";
-import { IDL } from "@dfinity/candid";
+import { callCanisterWsMessage, callCanisterWsOpen } from "./actor";
 
 export type IcWebSocketConfig = {
   /**
@@ -145,24 +142,13 @@ export default class IcWebSocket {
 
     try {
       // Call the canister's ws_open method
-      const { requestId, response } = await callWsOpen(
+      await callCanisterWsOpen(
         this.canisterId,
         this._wsAgent,
         {
           is_anonymous: this._isAnonymous,
         }
       );
-
-      // if the response is not ok, we have to execute a read_state to see what went wrong
-      if (!response.ok || response.body) {
-        const canisterError = await pollForWsOpenResponse(
-          this.canisterId,
-          this._wsAgent,
-          requestId,
-        );
-
-        throw new Error(canisterError);
-      }
 
       logger.debug("[onWsOpen] Open message sent, waiting for first open message from canister");
     } catch (error) {
@@ -193,7 +179,7 @@ export default class IcWebSocket {
 
     const isSequenceNumValid = this._isWebsocketMessageSequenceNumberValid(websocketMessage);
     if (!isSequenceNumValid) {
-      // TODO: handle out of order messages
+      // TODO: close the connection
       logger.error("[onWsMessage] Received message sequence number does not match next expected value. Message ignored.");
       this._callOnErrorCallback(new Error(`Received message sequence number does not match next expected value (${this._incomingSequenceNum}). Message ignored.`));
       return;
@@ -315,7 +301,7 @@ export default class IcWebSocket {
   private async _sendMessage(message: CanisterWsMessageArguments): Promise<void> {
     // we don't need to wait for the response,
     // as we'll receive the ack message via WebSocket from the canister
-    await callWsMessage(
+    await callCanisterWsMessage(
       this.canisterId,
       this._wsAgent!,
       message
