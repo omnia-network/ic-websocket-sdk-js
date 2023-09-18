@@ -57,7 +57,6 @@ export class BaseQueue<T> {
   }
 
   public process() {
-    console.log('process', this._queue.length, this._canProcess, this._isProcessing);
     if (!this._canProcess) {
       return;
     }
@@ -81,7 +80,6 @@ export class BaseQueue<T> {
     }
 
     const item = this._queue.shift();
-
     if (this._itemCallback(item!)) {
       this._processNext();
     }
