@@ -20,6 +20,7 @@ import {
   type ClientIncomingMessage,
 } from "./types";
 import { callCanisterWsMessage, callCanisterWsOpen } from "./actor";
+import { BaseQueue } from "./queues";
 
 export type IcWebSocketConfig = {
   /**
@@ -47,9 +48,8 @@ export default class IcWebSocket {
   private _incomingSequenceNum = BigInt(1);
   private _outgoingSequenceNum = BigInt(0);
   private _isConnectionEstablished = false;
-  private _incomingMessagesQueue: Uint8Array[] = [];
-  private _outgoingMessagesQueue: Uint8Array[] = [];
-  private _isProcessingOutgoingMessagesQueue = false;
+  private _incomingMessagesQueue: BaseQueue<Uint8Array>;
+  private _outgoingMessagesQueue: BaseQueue<Uint8Array>;
 
   onclose: ((this: IcWebSocket, ev: CloseEvent) => any) | null = null;
   onerror: ((this: IcWebSocket, ev: ErrorEvent) => any) | null = null;
@@ -88,6 +88,16 @@ export default class IcWebSocket {
       void this._httpAgent.fetchRootKey();
     }
 
+    this._incomingMessagesQueue = new BaseQueue({
+      itemCallback: this._callOnMessageCallback.bind(this),
+      isDisabled: true,
+    });
+
+    this._outgoingMessagesQueue = new BaseQueue({
+      itemCallback: this._sendMessageFromQueue.bind(this),
+      isDisabled: true,
+    });
+
     this._wsInstance = new WebSocket(url, protocols); // Gateway address. Here localhost to reproduce the demo.
     this._wsInstance.binaryType = "arraybuffer";
     this._bindWsEvents();
@@ -102,8 +112,7 @@ export default class IcWebSocket {
       throw new Error("Data must be a Uint8Array");
     }
 
-    this._addOutgoingMessageToQueue(data);
-    this._processOutgoingMessagesQueue();
+    this._outgoingMessagesQueue.addAndProcess(data);
   }
 
   public getPrincipal(): Principal {
@@ -190,8 +199,7 @@ export default class IcWebSocket {
 
     this._inspectWebsocketMessageTimestamp(websocketMessage);
 
-    this._addIncomingMessageToQueue(new Uint8Array(websocketMessage.content));
-    this._processIncomingMessagesQueue();
+    this._incomingMessagesQueue.addAndProcess(new Uint8Array(websocketMessage.content));
   }
 
   private _handleServiceMessage(content: Uint8Array) {
@@ -203,10 +211,13 @@ export default class IcWebSocket {
         }
 
         this._isConnectionEstablished = true;
+
         this._callOnOpenCallback();
-        this._processIncomingMessagesQueue();
+
+        this._outgoingMessagesQueue.enable();
+        this._incomingMessagesQueue.enableAndProcess();
       } else if ("AckMessage" in serviceMessage) {
-        // TODO: handle ack message
+        this._handleAckMessageFromCanister(serviceMessage.AckMessage);
       } else {
         throw new Error("Invalid service message from canister");
       }
@@ -221,6 +232,8 @@ export default class IcWebSocket {
     logger.debug(`[onWsClose] WebSocket closed, code=${event.code} reason=${event.reason}`);
 
     this._isConnectionEstablished = false;
+    this._incomingMessagesQueue.disable();
+    this._outgoingMessagesQueue.disable();
 
     this._callOnCloseCallback(event);
   }
@@ -230,68 +243,20 @@ export default class IcWebSocket {
     this._callOnErrorCallback(new Error(`WebSocket error: ${error}`));
   }
 
-  private _addIncomingMessageToQueue(messageContent: Uint8Array) {
-    this._incomingMessagesQueue.push(messageContent);
-  }
-
-  private _processIncomingMessagesQueue() {
-    if (!this._isConnectionEstablished) {
-      return;
-    }
-
-    while (this._incomingMessagesQueue.length > 0) {
-      const messageContent = this._incomingMessagesQueue.shift();
-      if (!messageContent) {
-        break;
-      }
-
-      this._callOnMessageCallback(messageContent);
-    }
-  }
-
-  private _addOutgoingMessageToQueue(messageContent: Uint8Array) {
-    this._outgoingMessagesQueue.push(messageContent);
-  }
-
-  private _processOutgoingMessagesQueue() {
-    if (!this._isConnectionEstablished) {
-      return;
-    }
-
-    if (this._isProcessingOutgoingMessagesQueue) {
-      return;
-    }
-
-    this._isProcessingOutgoingMessagesQueue = true;
-    this._processNextOutgoingMessage();
-  }
-
-  private _processNextOutgoingMessage() {
-    if (!this._isConnectionEstablished) {
-      return;
-    }
-
-    if (this._outgoingMessagesQueue.length === 0) {
-      // the queue is empty, we can stop processing
-      this._isProcessingOutgoingMessagesQueue = false;
-      return;
-    }
-
-    const messageContent = this._outgoingMessagesQueue.shift();
-
+  private _sendMessageFromQueue(messageContent: Uint8Array): boolean {
     this._outgoingSequenceNum++;
-    const message = this._makeWsMessageArguments(messageContent!);
-    // we send the message via WebSocket to the gateway, which relays it to the canister
-    this._sendMessage(message)
-      .then(() => {
-        // if the message was sent successfully, we can continue with the next message
-        this._processNextOutgoingMessage();
-      })
-      .catch((error) => {
-        // the ws agent already tries 3 times under the hood, so if we get an error here, we can't continue
-        this._callOnErrorCallback(new Error(`Message sending failed: ${error}`));
-        this._wsInstance.close(3000, "Message sending failed");
-      });
+    try {
+      const message = this._makeWsMessageArguments(messageContent!);
+      // we send the message via WebSocket to the gateway, which relays it to the canister
+      this._sendMessage(message);
+    } catch (error) {
+      // the ws agent already tries 3 times under the hood, so if we get an error here, we can't continue
+      this._callOnErrorCallback(new Error(`Message sending failed: ${error}`));
+      this._wsInstance.close(3000, "Message sending failed");
+      return false;
+    }
+
+    return true;
   }
 
   private async _sendMessage(message: CanisterWsMessageArguments): Promise<void> {
@@ -363,13 +328,15 @@ export default class IcWebSocket {
     }
   }
 
-  private _callOnMessageCallback(data: Uint8Array) {
+  private _callOnMessageCallback(data: Uint8Array): boolean {
     logger.debug("[onmessage] Calling onmessage callback");
     if (this.onmessage) {
       this.onmessage.call(this, new MessageEvent("message", { data }));
     } else {
       logger.warn("[onmessage] No onmessage callback defined");
     }
+
+    return true;
   }
 
   private _callOnErrorCallback(error: Error) {
