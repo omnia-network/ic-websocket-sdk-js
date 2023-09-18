@@ -56,7 +56,7 @@ export type CanisterAckMessageContent = {
 export type ClientKeepAliveMessageContent = {
   'last_incoming_sequence_num': bigint,
 };
-export type CanisterServiceMessage = {
+export type WebsocketServiceMessageContent = {
   OpenMessage: CanisterOpenMessageContent,
 } | {
   AckMessage: CanisterAckMessageContent,
@@ -73,16 +73,20 @@ export const CanisterAckMessageContentIdl = IDL.Record({
 export const ClientKeepAliveMessageContentIdl = IDL.Record({
   'last_incoming_sequence_num': IDL.Nat64,
 });
-export const CanisterServiceMessageIdl = IDL.Variant({
+export const WebsocketServiceMessageContentIdl = IDL.Variant({
   'OpenMessage': CanisterOpenMessageContentIdl,
   'AckMessage': CanisterAckMessageContentIdl,
   'KeepAliveMessage': ClientKeepAliveMessageContentIdl,
 });
 
-export const decodeCanisterServiceMessage = (bytes: Uint8Array): CanisterServiceMessage => {
-  const decoded = IDL.decode([CanisterServiceMessageIdl], bytes);
+export const decodeWebsocketServiceMessageContent = (bytes: Uint8Array): WebsocketServiceMessageContent => {
+  const decoded = IDL.decode([WebsocketServiceMessageContentIdl], bytes);
   if (decoded.length !== 1) {
     throw new Error("Invalid CanisterServiceMessage");
   }
-  return decoded[0] as unknown as CanisterServiceMessage;
+  return decoded[0] as unknown as WebsocketServiceMessageContent;
+};
+
+export const encodeWebsocketServiceMessageContent = (msg: WebsocketServiceMessageContent): Uint8Array => {
+  return new Uint8Array(IDL.encode([WebsocketServiceMessageContentIdl], [msg]));
 };

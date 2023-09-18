@@ -6,10 +6,12 @@ import {
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import {
+  CanisterAckMessageContent,
   CanisterWsMessageArguments,
+  ClientKeepAliveMessageContent,
   WebsocketMessage,
   _WS_CANISTER_SERVICE,
-  decodeCanisterServiceMessage,
+  decodeWebsocketServiceMessageContent,
 } from "./idl";
 import logger from "./logger";
 import { isMessageBodyValid } from "./utils";
@@ -194,7 +196,7 @@ export default class IcWebSocket {
 
   private _handleServiceMessage(content: Uint8Array) {
     try {
-      const serviceMessage = decodeCanisterServiceMessage(content as Uint8Array);
+      const serviceMessage = decodeWebsocketServiceMessageContent(content as Uint8Array);
       if ("OpenMessage" in serviceMessage) {
         if (serviceMessage.OpenMessage.client_principal.compareTo(this.getPrincipal()) !== "eq") {
           throw new Error("Client principal does not match");
