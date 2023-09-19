@@ -29,5 +29,4 @@ export interface WsAgentRequestTransformFn {
 
 export type WsAgentRequestMessage<T> = {
   envelope: Envelope<T>;
-  canister_id: Principal;
 }

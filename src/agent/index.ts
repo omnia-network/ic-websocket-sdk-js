@@ -171,7 +171,6 @@ export class WsAgent {
     const envelope = await this._signRequest(transformedRequest.message, id);
     const message: WsAgentRequestMessage<CallRequest> = {
       envelope,
-      canister_id: canister,
     };
 
     this._requestAndRetry(message);
