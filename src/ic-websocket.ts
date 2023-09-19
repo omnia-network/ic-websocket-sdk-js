@@ -152,7 +152,7 @@ export default class IcWebSocket {
       callCanisterWsOpen(
         this.canisterId,
         this._wsAgent,
-        {}
+        null
       );
 
       this._incomingMessagesQueue.enableAndProcess();

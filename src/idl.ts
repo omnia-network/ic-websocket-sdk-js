@@ -13,7 +13,7 @@ export interface WebsocketMessage {
 export interface CanisterWsMessageArguments { 'msg': WebsocketMessage }
 export type CanisterWsMessageResult = { 'Ok': null } |
 { 'Err': string };
-export interface CanisterWsOpenArguments { };
+export type CanisterWsOpenArguments = null;
 export type CanisterWsOpenResult = { 'Ok': null } |
 { 'Err': string };
 export interface _WS_CANISTER_SERVICE {
@@ -38,7 +38,7 @@ const CanisterWsMessageResultIdl = IDL.Variant({
   'Ok': IDL.Null,
   'Err': IDL.Text,
 });
-const CanisterWsOpenArgumentsIdl = IDL.Record({});
+const CanisterWsOpenArgumentsIdl = IDL.Null;
 const CanisterWsOpenResultIdl = IDL.Variant({
   'Ok': IDL.Null,
   'Err': IDL.Text,
