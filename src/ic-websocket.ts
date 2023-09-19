@@ -2,7 +2,6 @@ import {
   Cbor,
   HttpAgent,
   SignIdentity,
-  WsAgent,
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import {
@@ -20,7 +19,7 @@ import {
   type ClientIncomingMessage,
 } from "./types";
 import { callCanisterWsMessage, callCanisterWsOpen } from "./actor";
-import { BaseQueue } from "./queues";
+import { WsAgent } from "./agent";
 
 export type IcWebSocketConfig = {
   /**
@@ -135,21 +134,21 @@ export default class IcWebSocket {
   }
 
   private async _onWsOpen() {
+    if (this._httpAgent.isLocal()) {
+      await this._httpAgent.fetchRootKey();
+    }
+
     this._wsAgent = new WsAgent({
       identity: this._identity,
       httpAgent: this._httpAgent,
       ws: this._wsInstance,
     });
 
-    if (this._httpAgent.isLocal()) {
-      void this._wsAgent.fetchRootKey();
-    }
-
     logger.debug("[onWsOpen] WebSocket opened, sending open message");
 
     try {
       // Call the canister's ws_open method
-      callCanisterWsOpen(
+      await callCanisterWsOpen(
         this.canisterId,
         this._wsAgent,
         null
@@ -258,22 +257,22 @@ export default class IcWebSocket {
     this._callOnErrorCallback(new Error(`WebSocket error: ${error}`));
   }
 
-  private _sendMessageFromQueue(messageContent: Uint8Array): boolean {
+  private _sendMessageFromQueue(messageContent: Uint8Array): Promise<boolean> {
     const message = this._makeWsMessageArguments(messageContent!);
     // we send the message via WebSocket to the gateway, which relays it to the canister
     return this._sendMessage(message);
   }
 
   /**
-   * Sends a message to the canister via WebSocket.
+   * Sends a message to the canister via WebSocket, using a method that uses the {@link WsAgent}.
    * @param message 
    * @returns {boolean} `true` if the message was sent successfully, `false` otherwise.
    */
-  private _sendMessage(message: CanisterWsMessageArguments): boolean {
+  private async _sendMessage(message: CanisterWsMessageArguments): Promise<boolean> {
     // we don't need to wait for the response,
     // as we'll receive the ack message via WebSocket from the canister
     try {
-      callCanisterWsMessage(
+      await callCanisterWsMessage(
         this.canisterId,
         this._wsAgent!,
         message

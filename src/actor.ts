@@ -1,8 +1,8 @@
-import { SubmitResponse, WsAgent } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 import { _WS_CANISTER_SERVICE, wsMessageIdl, wsOpenIdl } from "./idl";
 import type { CanisterWsMessageArguments, CanisterWsOpenArguments } from "./idl";
+import { WsAgent } from "./agent";
 
 const _callCanisterMethod = async (
   canisterId: Principal,
@@ -10,7 +10,7 @@ const _callCanisterMethod = async (
   methodName: string,
   idlFunc: IDL.FuncClass,
   args: unknown[],
-): Promise<SubmitResponse> => {
+): Promise<void> => {
   const cid = Principal.from(canisterId);
   const arg = IDL.encode(idlFunc.argTypes, args);
 
@@ -28,7 +28,7 @@ export const callCanisterWsOpen = async (
   canisterId: Principal,
   agent: WsAgent,
   args: CanisterWsOpenArguments,
-): Promise<SubmitResponse> => _callCanisterMethod(canisterId, agent, "ws_open", wsOpenIdl, [args]);
+): Promise<void> => _callCanisterMethod(canisterId, agent, "ws_open", wsOpenIdl, [args]);
 
 /**
  * Calls the ws_message method on the canister.
@@ -37,4 +37,4 @@ export const callCanisterWsMessage = async (
   canisterId: Principal,
   agent: WsAgent,
   args: CanisterWsMessageArguments,
-): Promise<SubmitResponse> => _callCanisterMethod(canisterId, agent, "ws_message", wsMessageIdl, [args]);
+): Promise<void> => _callCanisterMethod(canisterId, agent, "ws_message", wsMessageIdl, [args]);
