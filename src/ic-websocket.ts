@@ -155,6 +155,8 @@ export default class IcWebSocket {
         {}
       );
 
+      this._incomingMessagesQueue.enableAndProcess();
+
       logger.debug("[onWsOpen] Open message sent, waiting for first open message from canister");
     } catch (error) {
       logger.error("[onWsOpen] Error:", error);
@@ -224,8 +226,7 @@ export default class IcWebSocket {
 
         this._callOnOpenCallback();
 
-        this._outgoingMessagesQueue.enable();
-        this._incomingMessagesQueue.enableAndProcess();
+        this._outgoingMessagesQueue.enableAndProcess();
       } else if ("AckMessage" in serviceMessage) {
         logger.debug("[onWsMessage] Received ack message from canister");
         // this._handleAckMessageFromCanister(serviceMessage.AckMessage);
