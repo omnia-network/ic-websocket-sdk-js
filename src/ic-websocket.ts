@@ -19,6 +19,9 @@ import {
   type ClientIncomingMessage,
 } from "./types";
 import { callCanisterWsMessage, callCanisterWsOpen } from "./actor";
+import {
+  BaseQueue,
+} from "./queues";
 import { WsAgent } from "./agent";
 
 export type IcWebSocketConfig = {
@@ -82,7 +85,6 @@ export default class IcWebSocket {
       host: config.networkUrl,
       identity: this._identity,
     });
-
     if (this._httpAgent.isLocal()) {
       void this._httpAgent.fetchRootKey();
     }
@@ -134,10 +136,6 @@ export default class IcWebSocket {
   }
 
   private async _onWsOpen() {
-    if (this._httpAgent.isLocal()) {
-      await this._httpAgent.fetchRootKey();
-    }
-
     this._wsAgent = new WsAgent({
       identity: this._identity,
       httpAgent: this._httpAgent,
