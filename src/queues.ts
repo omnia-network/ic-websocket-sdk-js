@@ -2,7 +2,7 @@
  * The function that will be called when an item is processed.
  * If the function returns false, the processing will stop.
  */
-type QueueItemCallback<T> = (message: T) => boolean;
+type QueueItemCallback<T> = (message: T) => boolean | Promise<boolean>;
 
 type QueueArgs<T> = {
   /**
@@ -25,7 +25,7 @@ export class BaseQueue<T> {
 
   constructor(args: QueueArgs<T>) {
     if (!args.itemCallback) {
-      throw new Error('processCallback is required');
+      throw new Error("itemCallback is required");
     }
     this._itemCallback = args.itemCallback;
 
@@ -80,8 +80,15 @@ export class BaseQueue<T> {
     }
 
     const item = this._queue.shift();
-    if (this._itemCallback(item!)) {
-      this._processNext();
-    }
+    // process the item, making sure we wait for the result before processing the next item
+    Promise.resolve(this._itemCallback(item!)).then((shouldContinue) => {
+      if (shouldContinue) {
+        this._processNext();
+      } else {
+        this._isProcessing = false;
+      }
+    }).catch(() => {
+      this._isProcessing = false;
+    });
   }
 }

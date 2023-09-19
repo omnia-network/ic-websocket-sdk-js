@@ -76,3 +76,14 @@ export const isMessageBodyValid = async (
 
   return !!treeSha && areBuffersEqual(sha, treeSha);
 };
+
+export const safeExecute = async <T>(
+  fn: () => T | Promise<T>,
+  warnMessage: string
+): Promise<T | undefined> => {
+  try {
+    return await fn();
+  } catch (error) {
+    logger.warn(warnMessage, error);
+  }
+};
