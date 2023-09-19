@@ -195,11 +195,11 @@ export class WsAgent {
   private _requestAndRetry<T>(
     message: WsAgentRequestMessage<T>,
     tries = 0,
-  ): Promise<void> {
+  ): void {
     const messageBytes = Cbor.encode(message);
 
     try {
-      this._ws.send(messageBytes);
+      return this._ws.send(messageBytes);
     } catch (error) {
       if (this._retryTimes > tries) {
         console.warn(`${error}  Retrying request.`);
