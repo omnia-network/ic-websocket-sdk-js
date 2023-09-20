@@ -48,7 +48,7 @@ const CanisterWsMessageResultIdl = IDL.Variant({
   'Ok': IDL.Null,
   'Err': IDL.Text,
 });
-const CanisterWsOpenArgumentsIdl = IDL.Null;
+const CanisterWsOpenArgumentsIdl = IDL.Record({ 'client_nonce': IDL.Nat64 });
 const CanisterWsOpenResultIdl = IDL.Variant({
   'Ok': IDL.Null,
   'Err': IDL.Text,
