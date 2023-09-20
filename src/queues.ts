@@ -92,3 +92,95 @@ export class BaseQueue<T> {
     });
   }
 }
+
+type AckMessagesQueueArgs = {
+  expirationMs: number;
+  timeoutExpiredCallback: AckTimeoutExpiredCallback;
+}
+
+type AckMessage = {
+  sequenceNumber: bigint;
+  addedAt: number;
+}
+
+type AckTimeoutExpiredCallback = (notReceivedAck: AckMessage['sequenceNumber'][]) => void;
+
+export class AckMessagesQueue {
+  private _queue: AckMessage[] = [];
+  private _expirationMs: number;
+  private _timeoutExpiredCallback: AckTimeoutExpiredCallback;
+  private _lastAckTimeout: NodeJS.Timeout | null = null;
+
+  constructor(args: AckMessagesQueueArgs) {
+    if (!args.expirationMs) {
+      throw new Error("checkTimeoutMs is required");
+    }
+    this._expirationMs = Math.floor(args.expirationMs); // Make sure it's an integer
+
+    if (!args.timeoutExpiredCallback) {
+      throw new Error("timeoutExpiredCallback is required");
+    }
+    this._timeoutExpiredCallback = args.timeoutExpiredCallback;
+  }
+
+  private _startLastAckTimeout() {
+    if (this._lastAckTimeout) {
+      clearTimeout(this._lastAckTimeout);
+    }
+
+    this._lastAckTimeout = setTimeout(() => {
+      this._onTimeoutExpired(this._queue);
+    }, this._expirationMs);
+  }
+
+  private _onTimeoutExpired(items: AckMessage[]) {
+    this._timeoutExpiredCallback(items.map((item) => item.sequenceNumber));
+    this._queue = [];
+  }
+
+  public add(sequenceNumber: bigint) {
+    const last = this.last();
+    if (last && sequenceNumber <= last.sequenceNumber) {
+      throw new Error(`Sequence number ${sequenceNumber} is not greater than last: ${last.sequenceNumber}`);
+    }
+
+    this._queue.push({
+      sequenceNumber,
+      addedAt: Date.now(),
+    });
+  }
+
+  public ack(sequenceNumber: bigint) {
+    const index = this._queue.findIndex((item) => item.sequenceNumber === sequenceNumber);
+    if (index >= 0) {
+      // remove all items up to and including the acked item
+      this._queue.splice(0, index + 1);
+    } else {
+      const last = this.last();
+      // we throw an error only if the received sequence number is not in the queue
+      // and is greater than the last sequence number in the queue
+      if (last && sequenceNumber > last.sequenceNumber) {
+        throw new Error(`Sequence number ${sequenceNumber} is greater than last: ${last.sequenceNumber}`);
+      }
+    }
+
+    // for the remaining items in the queue, check if they have expired
+    // if yes, call the callback for the first expired item
+    for (const item of this._queue) {
+      if (Date.now() - item.addedAt >= this._expirationMs) {
+        // if it has expired and is still in the queue,
+        // it means it has not been acked, so we call the callback
+        return this._onTimeoutExpired([item]);
+      }
+    }
+
+    this._startLastAckTimeout();
+  }
+
+  public last(): AckMessage | null {
+    if (this._queue.length === 0) {
+      return null;
+    }
+    return this._queue[this._queue.length - 1];
+  }
+}

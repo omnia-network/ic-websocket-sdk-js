@@ -1,4 +1,4 @@
-import { BaseQueue } from "./queues";
+import { AckMessagesQueue, BaseQueue } from "./queues";
 
 describe("BaseQueue", () => {
   let queue: BaseQueue<string>;
@@ -54,7 +54,7 @@ describe("BaseQueue", () => {
       expect(itemCallback).toHaveBeenCalledWith("test");
     });
 
-    it("should process multiple items in the queue", () => {
+    it("should process multiple items in the queue", async () => {
       const itemCallback = jest.fn().mockReturnValue(true);
       queue = new BaseQueue({
         itemCallback,
@@ -62,6 +62,10 @@ describe("BaseQueue", () => {
       queue.add("test1");
       queue.add("test2");
       queue.process();
+
+      // the queue processing is async, so we need to wait for it to finish
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       expect(queue["_queue"]).toEqual([]);
       expect(itemCallback).toHaveBeenCalledTimes(2);
     });
@@ -98,6 +102,85 @@ describe("BaseQueue", () => {
       queue.process();
       expect(queue["_queue"]).toEqual([]);
       expect(itemCallback).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("AckMessagesQueue", () => {
+  let queue: AckMessagesQueue;
+  const expirationMs = 1000;
+
+  beforeEach(() => {
+    queue = new AckMessagesQueue({
+      expirationMs,
+      timeoutExpiredCallback: jest.fn(),
+    });
+  });
+
+  describe("add", () => {
+    it("should add an item to the queue", () => {
+      queue.add(BigInt(1));
+      expect(queue.last()?.sequenceNumber).toEqual(BigInt(1));
+    });
+
+    it("should throw an error if sequence number is not greater than last", () => {
+      queue.add(BigInt(1));
+      expect(() => queue.add(BigInt(1))).toThrow("Sequence number 1 is not greater than last: 1");
+      expect(() => queue.add(BigInt(0))).toThrow("Sequence number 0 is not greater than last: 1");
+    });
+  });
+
+  describe("ack", () => {
+    it("should remove all items up to and including the acked item", () => {
+      queue.add(BigInt(1));
+      queue.add(BigInt(2));
+      queue.ack(BigInt(1));
+      expect(queue.last()?.sequenceNumber).toEqual(BigInt(2));
+    });
+
+    it("should not do anything if sequence number is lower than the last and not in the queue", () => {
+      queue.add(BigInt(1));
+      queue.add(BigInt(2));
+      queue.ack(BigInt(0));
+      expect(queue.last()?.sequenceNumber).toEqual(BigInt(2));
+    });
+
+    it("should throw an error if sequence number is greater than last", () => {
+      queue.add(BigInt(1));
+      expect(() => queue.ack(BigInt(2))).toThrow("Sequence number 2 is greater than last: 1");
+    });
+
+    it("should call the timeoutExpiredCallback for expired items when receiving the ack", () => {
+      queue.add(BigInt(1));
+      jest.useFakeTimers().setSystemTime(Date.now() + expirationMs + 1);
+      queue.add(BigInt(2));
+      queue.ack(BigInt(1));
+      jest.advanceTimersByTime(expirationMs + 1);
+      expect(queue.last()).toBeNull();
+      expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(2)]);
+    });
+
+    it("should call the timeoutExpiredCallback for all expired items after not receiving the ack", () => {
+      queue.add(BigInt(1));
+      queue.add(BigInt(2));
+      queue.add(BigInt(3));
+      jest.useFakeTimers();
+      queue.ack(BigInt(1));
+      jest.advanceTimersByTime(1000);
+      expect(queue.last()).toBeNull();
+      expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(2), BigInt(3)]);
+    });
+  });
+
+  describe("last", () => {
+    it("should return null if the queue is empty", () => {
+      expect(queue.last()).toBeNull();
+    });
+
+    it("should return the last item in the queue", () => {
+      queue.add(BigInt(1));
+      queue.add(BigInt(2));
+      expect(queue.last()?.sequenceNumber).toEqual(BigInt(2));
     });
   });
 });
