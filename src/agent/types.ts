@@ -1,4 +1,3 @@
-import type { Principal } from '@dfinity/principal';
 import { CallRequest, Endpoint, Envelope, QueryRequest, ReadStateRequest } from '@dfinity/agent';
 
 export type WsAgentRequest = WsAgentQueryRequest | WsAgentSubmitRequest | WsAgentReadStateRequest;

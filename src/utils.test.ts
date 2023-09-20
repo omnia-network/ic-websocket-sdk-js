@@ -1,6 +1,6 @@
 import { HttpAgent, fromHex } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
-import { isMessageBodyValid, safeExecute } from "./utils";
+import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import { ClientIncomingMessage } from "./types";
 import logger from "./logger";
 
@@ -155,5 +155,12 @@ describe("safeExecute", () => {
 
     expect(result).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(errorMessage, expect.any(Error));
+  });
+});
+
+describe("randomBigInt", () => {
+  it("should generate a random bigint", () => {
+    const random = randomBigInt();
+    expect(typeof random).toBe("bigint");
   });
 });

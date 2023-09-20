@@ -8,13 +8,15 @@ import {
   CanisterAckMessageContent,
   CanisterWsMessageArguments,
   ClientKeepAliveMessageContent,
+  ClientKey,
   WebsocketMessage,
   _WS_CANISTER_SERVICE,
   decodeWebsocketServiceMessageContent,
   encodeWebsocketServiceMessageContent,
+  isClientKeyEq,
 } from "./idl";
 import logger from "./logger";
-import { isMessageBodyValid, safeExecute } from "./utils";
+import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import {
   isClientIncomingMessage,
   type ClientIncomingMessage,
@@ -68,6 +70,7 @@ export default class IcWebSocket {
   private _incomingMessagesQueue: BaseQueue<ArrayBuffer>;
   private _outgoingMessagesQueue: BaseQueue<Uint8Array>;
   private _ackMessagesQueue: AckMessagesQueue;
+  private _clientKey: ClientKey;
 
   onclose: ((this: IcWebSocket, ev: CloseEvent) => any) | null = null;
   onerror: ((this: IcWebSocket, ev: ErrorEvent) => any) | null = null;
@@ -86,12 +89,15 @@ export default class IcWebSocket {
     if (!config.identity) {
       throw new Error("Identity is required");
     }
-
     if (!(config.identity instanceof SignIdentity)) {
       throw new Error("Identity must be a SignIdentity");
     }
-
     this._identity = config.identity;
+
+    this._clientKey = {
+      client_principal: this.getPrincipal(),
+      client_nonce: randomBigInt(),
+    }
 
     if (!config.networkUrl) {
       throw new Error("Network url is required");
@@ -170,7 +176,9 @@ export default class IcWebSocket {
       await callCanisterWsOpen(
         this.canisterId,
         this._wsAgent,
-        null
+        {
+          client_nonce: this._clientKey.client_nonce,
+        }
       );
 
       this._incomingMessagesQueue.enableAndProcess();
@@ -236,8 +244,8 @@ export default class IcWebSocket {
       const serviceMessage = decodeWebsocketServiceMessageContent(content as Uint8Array);
       if ("OpenMessage" in serviceMessage) {
         logger.debug("[onWsMessage] Received open message from canister");
-        if (serviceMessage.OpenMessage.client_principal.compareTo(this.getPrincipal()) !== "eq") {
-          throw new Error("Client principal does not match");
+        if (!isClientKeyEq(serviceMessage.OpenMessage.client_key, this._clientKey)) {
+          throw new Error("Client key does not match");
         }
 
         this._isConnectionEstablished = true;
@@ -387,7 +395,7 @@ export default class IcWebSocket {
     this._outgoingSequenceNum++;
 
     const outgoingMessage: WebsocketMessage = {
-      client_principal: this.getPrincipal(),
+      client_key: this._clientKey,
       sequence_num: this._outgoingSequenceNum,
       timestamp: BigInt(Date.now()) * BigInt(10 ** 6),
       content,
