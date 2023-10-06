@@ -66,6 +66,19 @@ export default class IcWebSocket {
   onopen: ((this: IcWebSocket, ev: Event) => any) | null = null;
 
   /**
+   * Returns the state of the WebSocket object's connection.
+   */
+  get readyState(): number {
+    return this._wsInstance.readyState;
+  }
+
+  // forwards the WebSocket state constants
+  public CLOSED = WebSocket.CLOSED;
+  public CLOSING = WebSocket.CLOSING;
+  public CONNECTING = WebSocket.CONNECTING;
+  public OPEN = WebSocket.OPEN;
+
+  /**
    * Creates a new IcWebSocket instance, waiting **30 seconds** for the WebSocket to be open.
    * @param url The gateway address.
    * @param protocols The protocols to use in the WebSocket.
