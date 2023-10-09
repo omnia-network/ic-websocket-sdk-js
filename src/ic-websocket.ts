@@ -5,11 +5,14 @@ import {
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import {
+  CanisterAckMessageContent,
   CanisterWsMessageArguments,
+  ClientKeepAliveMessageContent,
   ClientKey,
   WebsocketMessage,
   _WS_CANISTER_SERVICE,
   decodeWebsocketServiceMessageContent,
+  encodeWebsocketServiceMessageContent,
   isClientKeyEq,
 } from "./idl";
 import logger from "./logger";
@@ -20,6 +23,7 @@ import {
 } from "./types";
 import { callCanisterWsMessage, callCanisterWsOpen } from "./actor";
 import {
+  AckMessagesQueue,
   BaseQueue,
 } from "./queues";
 import { WsAgent } from "./agent";
@@ -43,6 +47,13 @@ export type IcWebSocketConfig = {
    * The IC network url to use for the underlying agent. It can be a local replica URL (e.g. http://localhost:4943) or the IC mainnet URL (https://icp0.io).
    */
   networkUrl: string;
+  /**
+   * The expiration (in milliseconds) time for receiving an ack message from the canister after sending a message.
+   * If the ack message is not received within this time, the connection will be closed.
+   * This parameter should always me **3/2 times or more** the canister's send ack period.
+   * @default 90000 (90 seconds = 3/2 default send ack period on the canister)
+   */
+  ackMessageTimeout?: number;
 };
 
 type WsParameters = ConstructorParameters<typeof WebSocket>;
@@ -58,6 +69,7 @@ export default class IcWebSocket {
   private _isConnectionEstablished = false;
   private _incomingMessagesQueue: BaseQueue<ArrayBuffer>;
   private _outgoingMessagesQueue: BaseQueue<Uint8Array>;
+  private _ackMessagesQueue: AckMessagesQueue;
   private _clientKey: ClientKey;
 
   onclose: ((this: IcWebSocket, ev: CloseEvent) => any) | null = null;
@@ -120,6 +132,11 @@ export default class IcWebSocket {
     this._outgoingMessagesQueue = new BaseQueue({
       itemCallback: this._sendMessageFromQueue.bind(this),
       isDisabled: true,
+    });
+
+    this._ackMessagesQueue = new AckMessagesQueue({
+      expirationMs: config.ackMessageTimeout || DEFAULT_ACK_MESSAGE_TIMEOUT_MS,
+      timeoutExpiredCallback: this._onAckMessageTimeout.bind(this),
     });
 
     this._wsInstance = new WebSocket(url, protocols); // Gateway address. Here localhost to reproduce the demo.
@@ -250,7 +267,7 @@ export default class IcWebSocket {
 
         this._outgoingMessagesQueue.enableAndProcess();
       } else if ("AckMessage" in serviceMessage) {
-        logger.warn("[onWsMessage] Ack messages still not implemented yet");
+        await this._handleAckMessageFromCanister(serviceMessage.AckMessage);
       } else {
         throw new Error("Invalid service message from canister");
       }
@@ -262,6 +279,44 @@ export default class IcWebSocket {
     }
 
     return true;
+  }
+
+  private async _handleAckMessageFromCanister(content: CanisterAckMessageContent): Promise<void> {
+    const lastAckSequenceNumberFromCanister = BigInt(content.last_incoming_sequence_num);
+    logger.debug("[onWsMessage] Received ack message from canister with sequence number", lastAckSequenceNumberFromCanister);
+
+    try {
+      this._ackMessagesQueue.ack(lastAckSequenceNumberFromCanister);
+    } catch (error) {
+      logger.error("[onWsMessage] Ack message error:", error);
+      this._callOnErrorCallback(new Error(`Ack message error: ${error}`));
+      return this._wsInstance.close(4000, "Ack message error");
+    }
+
+    await this._sendKeepAliveMessage();
+  }
+
+  private async _sendKeepAliveMessage(): Promise<void> {
+    const keepAliveMessageContent: ClientKeepAliveMessageContent = {
+      last_incoming_sequence_num: this._incomingSequenceNum,
+    };
+    const bytes = encodeWebsocketServiceMessageContent({
+      KeepAliveMessage: keepAliveMessageContent,
+    });
+    const keepAliveMessage = this._makeWsMessageArguments(new Uint8Array(bytes), true);
+
+    const sent = await this._sendMessage(keepAliveMessage);
+    if (!sent) {
+      logger.error("[onWsMessage] Keep alive message was not sent");
+      this._callOnErrorCallback(new Error("Keep alive message was not sent"));
+      this._wsInstance.close(4000, "Keep alive message was not sent");
+    }
+  }
+
+  private _onAckMessageTimeout(notReceivedAcks: bigint[]) {
+    logger.error("[onAckMessageTimeout] Ack message timeout. Not received ack for sequence numbers:", notReceivedAcks);
+    this._callOnErrorCallback(new Error(`Ack message timeout. Not received ack for sequence numbers: ${notReceivedAcks}`));
+    this._wsInstance.close(4000, "Ack message timeout");
   }
 
   private _onWsClose(event: CloseEvent) {
@@ -299,6 +354,9 @@ export default class IcWebSocket {
         this._wsAgent!,
         message
       );
+
+      // add the sequence number to the ack messages queue
+      this._ackMessagesQueue.add(this._outgoingSequenceNum);
 
       logger.debug("[send] Message sent");
     } catch (error) {

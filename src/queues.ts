@@ -115,7 +115,7 @@ export class AckMessagesQueue {
     if (!args.expirationMs) {
       throw new Error("checkTimeoutMs is required");
     }
-    this._expirationMs = Math.floor(args.expirationMs); // Make sure it's an integer
+    this._expirationMs = Math.floor(args.expirationMs); // make sure it's an integer
 
     if (!args.timeoutExpiredCallback) {
       throw new Error("timeoutExpiredCallback is required");
