@@ -85,10 +85,10 @@ export default class IcWebSocket {
   }
 
   // forwards the WebSocket state constants
-  public CLOSED = WebSocket.CLOSED;
-  public CLOSING = WebSocket.CLOSING;
-  public CONNECTING = WebSocket.CONNECTING;
-  public OPEN = WebSocket.OPEN;
+  public readonly CLOSED = WebSocket.CLOSED;
+  public readonly CLOSING = WebSocket.CLOSING;
+  public readonly CONNECTING = WebSocket.CONNECTING;
+  public readonly OPEN = WebSocket.OPEN;
 
   /**
    * Creates a new IcWebSocket instance, waiting **30 seconds** for the WebSocket to be open.
