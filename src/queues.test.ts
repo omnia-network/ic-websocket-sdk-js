@@ -128,6 +128,14 @@ describe("AckMessagesQueue", () => {
       expect(() => queue.add(BigInt(1))).toThrow("Sequence number 1 is not greater than last: 1");
       expect(() => queue.add(BigInt(0))).toThrow("Sequence number 0 is not greater than last: 1");
     });
+
+    it("should call the timeoutExpiredCallback for expired items when not receiving any ack", () => {
+      jest.useFakeTimers().setSystemTime(Date.now() + expirationMs + 1);
+      queue.add(BigInt(1));
+      jest.advanceTimersByTime(expirationMs + 1);
+      expect(queue.last()).toBeNull();
+      expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(1)]);
+    });
   });
 
   describe("ack", () => {
@@ -166,7 +174,7 @@ describe("AckMessagesQueue", () => {
       queue.add(BigInt(3));
       jest.useFakeTimers();
       queue.ack(BigInt(1));
-      jest.advanceTimersByTime(1000);
+      jest.advanceTimersByTime(expirationMs);
       expect(queue.last()).toBeNull();
       expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(2), BigInt(3)]);
     });

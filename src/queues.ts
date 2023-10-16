@@ -124,13 +124,17 @@ export class AckMessagesQueue {
   }
 
   private _startLastAckTimeout() {
+    this._lastAckTimeout = setTimeout(() => {
+      this._onTimeoutExpired(this._queue);
+    }, this._expirationMs);
+  }
+
+  private _restartLastAckTimeout() {
     if (this._lastAckTimeout) {
       clearTimeout(this._lastAckTimeout);
     }
 
-    this._lastAckTimeout = setTimeout(() => {
-      this._onTimeoutExpired(this._queue);
-    }, this._expirationMs);
+    this._startLastAckTimeout();
   }
 
   private _onTimeoutExpired(items: AckMessage[]) {
@@ -148,6 +152,10 @@ export class AckMessagesQueue {
       sequenceNumber,
       addedAt: Date.now(),
     });
+
+    if (!this._lastAckTimeout) {
+      this._startLastAckTimeout();
+    }
   }
 
   public ack(sequenceNumber: bigint) {
@@ -174,7 +182,7 @@ export class AckMessagesQueue {
       }
     }
 
-    this._startLastAckTimeout();
+    this._restartLastAckTimeout();
   }
 
   public last(): AckMessage | null {

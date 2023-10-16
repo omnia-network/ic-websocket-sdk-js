@@ -298,7 +298,7 @@ export default class IcWebSocket {
 
   private async _sendKeepAliveMessage(): Promise<void> {
     const keepAliveMessageContent: ClientKeepAliveMessageContent = {
-      last_incoming_sequence_num: this._incomingSequenceNum,
+      last_incoming_sequence_num: this._incomingSequenceNum - BigInt(1),
     };
     const bytes = encodeWebsocketServiceMessageContent({
       KeepAliveMessage: keepAliveMessageContent,
@@ -356,7 +356,7 @@ export default class IcWebSocket {
       );
 
       // add the sequence number to the ack messages queue
-      this._ackMessagesQueue.add(this._outgoingSequenceNum);
+      this._ackMessagesQueue.add(message.msg.sequence_num);
 
       logger.debug("[send] Message sent");
     } catch (error) {
