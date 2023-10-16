@@ -76,3 +76,44 @@ export const isMessageBodyValid = async (
 
   return !!treeSha && areBuffersEqual(sha, treeSha);
 };
+
+export const safeExecute = async <T>(
+  fn: () => T | Promise<T>,
+  warnMessage: string
+): Promise<T | undefined> => {
+  try {
+    return await fn();
+  } catch (error) {
+    logger.warn(warnMessage, error);
+  }
+};
+
+/**
+ * Generates a random unsigned 64-bit integer
+ * @returns {bigint} a random bigint
+ */
+export const randomBigInt = (): bigint => {
+  // determine whether browser crypto is available
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+    const array = new BigUint64Array(1);
+    window.crypto.getRandomValues(array);
+    return array[0];
+  }
+  // A second check for webcrypto, in case it is loaded under global instead of window
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const array = new BigUint64Array(1);
+    crypto.getRandomValues(array);
+    return array[0];
+  }
+  // determine whether node crypto is available
+  // @ts-ignore
+  if (typeof crypto !== 'undefined' && crypto.randomBytes) {
+    // @ts-ignore
+    const randomBuffer = crypto.randomBytes(8);
+    const randomHexString = randomBuffer.toString('hex');
+    return BigInt('0x' + randomHexString);
+  }
+
+  // TODO: test these fallbacks in a node environment
+  throw new Error('Random UInt64 generation not supported in this environment');
+};

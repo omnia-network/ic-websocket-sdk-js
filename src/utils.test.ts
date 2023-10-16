@@ -1,7 +1,8 @@
 import { HttpAgent, fromHex } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
-import { isMessageBodyValid } from "./utils";
+import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import { ClientIncomingMessage } from "./types";
+import logger from "./logger";
 
 // the canister from which the correct data were generated
 const canisterId = Principal.fromText("bnz7o-iuaaa-aaaaa-qaaaa-cai");
@@ -108,5 +109,58 @@ describe("Utils of the IcWebSocket", () => {
     );
 
     expect(isValid).toBe(false);
+  });
+});
+
+describe("safeExecute", () => {
+  beforeEach(() => {
+    jest.spyOn(logger, "warn").mockImplementation(() => {});
+  });
+
+  it("should execute a synchronous function safely", async () => {
+    const result = await safeExecute(() => {
+      return 1 + 2;
+    }, "Error executing synchronous function");
+
+    expect(result).toBe(3);
+  });
+
+  it("should execute an asynchronous function safely", async () => {
+    const result = await safeExecute(async () => {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(1 + 2);
+        }, 1000);
+      });
+    }, "Error executing asynchronous function");
+
+    expect(result).toBe(3);
+  });
+
+  it("should handle errors thrown by a synchronous function", async () => {
+    const errorMessage = "Error executing synchronous function";
+    const result = await safeExecute(() => {
+      throw new Error(errorMessage);
+    }, errorMessage);
+
+    expect(result).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(errorMessage, expect.any(Error));
+  });
+
+  it("should handle errors thrown by an asynchronous function", async () => {
+    const errorMessage = "Error executing asynchronous function";
+    const result = await safeExecute(async () => {
+      throw new Error(errorMessage);
+    }, errorMessage);
+
+    expect(result).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(errorMessage, expect.any(Error));
+  });
+});
+
+describe("randomBigInt", () => {
+  it("should generate a random bigint", () => {
+    const random = randomBigInt();
+    expect(typeof random).toBe("bigint");
   });
 });
