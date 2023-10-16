@@ -115,7 +115,7 @@ export class AckMessagesQueue {
     if (!args.expirationMs) {
       throw new Error("checkTimeoutMs is required");
     }
-    this._expirationMs = Math.floor(args.expirationMs); // Make sure it's an integer
+    this._expirationMs = Math.floor(args.expirationMs); // make sure it's an integer
 
     if (!args.timeoutExpiredCallback) {
       throw new Error("timeoutExpiredCallback is required");
@@ -124,13 +124,17 @@ export class AckMessagesQueue {
   }
 
   private _startLastAckTimeout() {
+    this._lastAckTimeout = setTimeout(() => {
+      this._onTimeoutExpired(this._queue);
+    }, this._expirationMs);
+  }
+
+  private _restartLastAckTimeout() {
     if (this._lastAckTimeout) {
       clearTimeout(this._lastAckTimeout);
     }
 
-    this._lastAckTimeout = setTimeout(() => {
-      this._onTimeoutExpired(this._queue);
-    }, this._expirationMs);
+    this._startLastAckTimeout();
   }
 
   private _onTimeoutExpired(items: AckMessage[]) {
@@ -148,6 +152,10 @@ export class AckMessagesQueue {
       sequenceNumber,
       addedAt: Date.now(),
     });
+
+    if (!this._lastAckTimeout) {
+      this._startLastAckTimeout();
+    }
   }
 
   public ack(sequenceNumber: bigint) {
@@ -174,7 +182,7 @@ export class AckMessagesQueue {
       }
     }
 
-    this._startLastAckTimeout();
+    this._restartLastAckTimeout();
   }
 
   public last(): AckMessage | null {
@@ -182,5 +190,13 @@ export class AckMessagesQueue {
       return null;
     }
     return this._queue[this._queue.length - 1];
+  }
+
+  public clear() {
+    this._queue = [];
+    if (this._lastAckTimeout) {
+      clearTimeout(this._lastAckTimeout);
+      this._lastAckTimeout = null;
+    }
   }
 }

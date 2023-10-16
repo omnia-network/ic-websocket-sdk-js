@@ -104,6 +104,16 @@ describe("BaseQueue", () => {
       expect(itemCallback).not.toHaveBeenCalled();
     });
   });
+
+  describe("disable", () => {
+    it("should disable the queue", () => {
+      queue.add("test");
+      queue.disable();
+      queue.process();
+      expect(queue["_canProcess"]).toBe(false);
+      expect(queue["_queue"]).toEqual(["test"]);
+    });
+  })
 });
 
 describe("AckMessagesQueue", () => {
@@ -127,6 +137,14 @@ describe("AckMessagesQueue", () => {
       queue.add(BigInt(1));
       expect(() => queue.add(BigInt(1))).toThrow("Sequence number 1 is not greater than last: 1");
       expect(() => queue.add(BigInt(0))).toThrow("Sequence number 0 is not greater than last: 1");
+    });
+
+    it("should call the timeoutExpiredCallback for expired items when not receiving any ack", () => {
+      jest.useFakeTimers().setSystemTime(Date.now() + expirationMs + 1);
+      queue.add(BigInt(1));
+      jest.advanceTimersByTime(expirationMs + 1);
+      expect(queue.last()).toBeNull();
+      expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(1)]);
     });
   });
 
@@ -166,7 +184,7 @@ describe("AckMessagesQueue", () => {
       queue.add(BigInt(3));
       jest.useFakeTimers();
       queue.ack(BigInt(1));
-      jest.advanceTimersByTime(1000);
+      jest.advanceTimersByTime(expirationMs);
       expect(queue.last()).toBeNull();
       expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(2), BigInt(3)]);
     });
@@ -181,6 +199,17 @@ describe("AckMessagesQueue", () => {
       queue.add(BigInt(1));
       queue.add(BigInt(2));
       expect(queue.last()?.sequenceNumber).toEqual(BigInt(2));
+    });
+  });
+
+  describe("clear", () => {
+    it("should clear the queue", () => {
+      queue.add(BigInt(1));
+      queue.add(BigInt(2));
+      queue.clear();
+      expect(queue.last()).toBeNull();
+      expect(queue["_queue"]).toEqual([]);
+      expect(queue["_lastAckTimeout"]).toBeNull();
     });
   });
 });

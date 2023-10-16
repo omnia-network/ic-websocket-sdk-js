@@ -7,5 +7,9 @@ global?.TextEncoder = util.TextEncoder;
 // @ts-ignore
 global?.TextDecoder = util.TextDecoder;
 
-// @ts-ignore
-global?.crypto?.subtle = crypto.subtle;
+Object.defineProperty(globalThis, 'crypto', {
+  value: {
+    getRandomValues: crypto.getRandomValues,
+    subtle: crypto.subtle,
+  }
+});
