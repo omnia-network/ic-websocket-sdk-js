@@ -104,6 +104,16 @@ describe("BaseQueue", () => {
       expect(itemCallback).not.toHaveBeenCalled();
     });
   });
+
+  describe("disable", () => {
+    it("should disable the queue", () => {
+      queue.add("test");
+      queue.disable();
+      queue.process();
+      expect(queue["_canProcess"]).toBe(false);
+      expect(queue["_queue"]).toEqual(["test"]);
+    });
+  })
 });
 
 describe("AckMessagesQueue", () => {
@@ -189,6 +199,17 @@ describe("AckMessagesQueue", () => {
       queue.add(BigInt(1));
       queue.add(BigInt(2));
       expect(queue.last()?.sequenceNumber).toEqual(BigInt(2));
+    });
+  });
+
+  describe("clear", () => {
+    it("should clear the queue", () => {
+      queue.add(BigInt(1));
+      queue.add(BigInt(2));
+      queue.clear();
+      expect(queue.last()).toBeNull();
+      expect(queue["_queue"]).toEqual([]);
+      expect(queue["_lastAckTimeout"]).toBeNull();
     });
   });
 });

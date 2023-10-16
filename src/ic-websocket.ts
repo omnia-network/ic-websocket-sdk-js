@@ -325,6 +325,7 @@ export default class IcWebSocket {
     this._isConnectionEstablished = false;
     this._incomingMessagesQueue.disable();
     this._outgoingMessagesQueue.disable();
+    this._ackMessagesQueue.clear();
 
     this._callOnCloseCallback(event);
   }

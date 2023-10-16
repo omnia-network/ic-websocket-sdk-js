@@ -294,7 +294,7 @@ describe("IcWebsocket class", () => {
   });
 });
 
-describe.only("Messages acknowledgement", () => {
+describe("Messages acknowledgement", () => {
   beforeEach(() => {
     mockWsServer = new WsMockServer(wsGatewayAddress);
   });

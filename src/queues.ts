@@ -191,4 +191,12 @@ export class AckMessagesQueue {
     }
     return this._queue[this._queue.length - 1];
   }
+
+  public clear() {
+    this._queue = [];
+    if (this._lastAckTimeout) {
+      clearTimeout(this._lastAckTimeout);
+      this._lastAckTimeout = null;
+    }
+  }
 }
