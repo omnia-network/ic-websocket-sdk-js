@@ -1,3 +1,5 @@
+import { ActorMethod } from "@dfinity/agent";
+
 export type ClientIncomingMessage = {
   key: string;
   content: Uint8Array;
@@ -14,3 +16,5 @@ export const isClientIncomingMessage = (arg: unknown): arg is ClientIncomingMess
     (arg as ClientIncomingMessage).tree instanceof Uint8Array
   );
 };
+
+export type GetInnerType<S> = S extends ActorMethod<infer T> ? T : never;

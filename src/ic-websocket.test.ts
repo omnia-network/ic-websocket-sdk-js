@@ -4,25 +4,28 @@ import { setupServer } from "msw/node";
 import { CallRequest, Cbor, fromHex } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
 
-import IcWebSocket from "./ic-websocket";
+import IcWebSocket, { createWsConfig } from "./ic-websocket";
 import { Principal } from "@dfinity/principal";
 import { generateRandomIdentity } from "./identity";
-import { CanisterWsMessageArguments, CanisterWsOpenArguments, WebsocketServiceMessageContent, decodeWebsocketServiceMessageContent, wsMessageIdl, wsOpenIdl } from "./idl";
-import type { IcWebSocketConfig } from "./ic-websocket";
-import type { WsAgentRequestMessage } from "./agent/types";
+import { CanisterWsMessageArguments, CanisterWsOpenArguments, WebsocketServiceMessageContent, _WS_CANISTER_SERVICE, decodeWebsocketServiceMessageContent, wsMessageIdl, wsOpenIdl } from "./idl";
 import { canisterId, client1Key } from "./test/clients";
 import { INVALID_MESSAGE_KEY, VALID_ACK_MESSAGE, VALID_MESSAGE_SEQ_NUM_2, VALID_MESSAGE_SEQ_NUM_3, VALID_OPEN_MESSAGE } from "./test/messages";
 import { sleep } from "./test/helpers";
+import { getTestCanisterActor, getTestCanisterActorWithoutMethods, getTestCanisterActorWrongArgs, getTestCanisterActorWrongOpt } from "./test/actor";
+import type { WsAgentRequestMessage } from "./agent/types";
 
 const wsGatewayAddress = "ws://127.0.0.1:8080";
 // the canister from which the application message was sent (needed to verify the message certificate)
 const icNetworkUrl = "http://127.0.0.1:8081";
 
-const icWebsocketConfig: IcWebSocketConfig = {
+const testCanisterActor = getTestCanisterActor(canisterId);
+
+const icWebsocketConfig = createWsConfig({
   canisterId: canisterId.toText(),
+  canisterActor: testCanisterActor,
   networkUrl: icNetworkUrl,
   identity: generateRandomIdentity(),
-};
+});
 
 //// Mock Servers
 let mockWsServer: WsMockServer;
@@ -61,24 +64,46 @@ describe("IcWebsocket class", () => {
     expect(onError).toHaveBeenCalled();
   });
 
-  it("throws an error if the identity is not provided", async () => {
-    const icWsConfig: IcWebSocketConfig = { ...icWebsocketConfig };
+  it("throws an error if the canisterActor is not provided", () => {
+    const icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    // @ts-ignore
+    delete icWsConfig.canisterActor;
+
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Canister actor is required");
+  });
+
+  it("throws errors if the canisterActor is not compatible", () => {
+    let icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    icWsConfig.canisterActor = getTestCanisterActorWithoutMethods(canisterId);
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Canister does not implement ws_message method");
+
+    icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    icWsConfig.canisterActor = getTestCanisterActorWrongArgs(canisterId);
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("ws_message method must have 2 arguments");
+
+    icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    icWsConfig.canisterActor = getTestCanisterActorWrongOpt(canisterId);
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Application message type must be optional in the ws_message arguments");
+  });
+
+  it("throws an error if the identity is not provided", () => {
+    const icWsConfig = createWsConfig({ ...icWebsocketConfig });
     // @ts-ignore
     delete icWsConfig.identity;
 
     expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Identity is required");
   });
 
-  it("throws an error if the identity provided is not a SignIdentity", async () => {
-    const icWsConfig: IcWebSocketConfig = { ...icWebsocketConfig };
+  it("throws an error if the identity provided is not a SignIdentity", () => {
+    const icWsConfig = createWsConfig({ ...icWebsocketConfig });
     // @ts-ignore
     icWsConfig.identity = {};
 
     expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Identity must be a SignIdentity");
   });
 
-  it("throws an error if the networkUrl is not provided", async () => {
-    const icWsConfig: IcWebSocketConfig = { ...icWebsocketConfig };
+  it("throws an error if the networkUrl is not provided", () => {
+    const icWsConfig = createWsConfig({ ...icWebsocketConfig });
     // @ts-ignore
     delete icWsConfig.networkUrl;
 
@@ -243,9 +268,7 @@ describe("IcWebsocket class", () => {
     expect(icWs).toBeDefined();
     await mockWsServer.connected;
 
-    const applicationMessageContent = new Uint8Array([1, 2, 3]);
-
-    expect(() => icWs.send(applicationMessageContent)).toThrowError("Connection is not established yet");
+    expect(() => icWs.send({ text: "test" })).toThrowError("Connection is not established yet");
   });
 
   it("messages are sent if the connection is established", async () => {
@@ -265,7 +288,7 @@ describe("IcWebsocket class", () => {
     // set the client key back
     icWs["_clientKey"] = originalClientKey;
 
-    const applicationMessageContent = new Uint8Array([1, 2, 3]);
+    const applicationMessageContent = { text: "test" };
 
     icWs.send(applicationMessageContent);
 
@@ -282,15 +305,18 @@ describe("IcWebsocket class", () => {
       Principal.fromUint8Array(new Uint8Array(envelopeContent.sender as Uint8Array))
     )).toEqual("eq");
     expect(envelopeContent.method_name).toEqual("ws_message");
-    expect(IDL.decode(wsMessageIdl.argTypes, envelopeContent.arg)[0]).toMatchObject<CanisterWsMessageArguments>({
+    const wsMessageArgs = IDL.decode(wsMessageIdl.argTypes, envelopeContent.arg) as unknown as [CanisterWsMessageArguments, IDL.OptClass<IDL.NullClass>];
+    expect(wsMessageArgs[0]).toMatchObject<CanisterWsMessageArguments>({
       msg: {
         client_key: originalClientKey,
-        content: applicationMessageContent,
+        content: expect.any(Uint8Array), // tested below
         is_service_message: false,
         sequence_num: BigInt(1),
         timestamp: expect.any(BigInt),
       },
     });
+    expect(IDL.decode([IDL.Record({ 'text': IDL.Text })], wsMessageArgs[0].msg.content as Uint8Array)[0]).toMatchObject(applicationMessageContent);
+    expect(wsMessageArgs[1]).toEqual([]); // check that we're not sending unneeded arguments
   });
 });
 
@@ -305,10 +331,10 @@ describe("Messages acknowledgement", () => {
 
   it("fails if messages are not acknowledged in time", async () => {
     const ackMessageTimeoutMs = 2000;
-    const icWsConfig: IcWebSocketConfig = {
+    const icWsConfig = createWsConfig({
       ...icWebsocketConfig,
       ackMessageTimeout: ackMessageTimeoutMs,
-    };
+    });
     const onError = jest.fn();
     const onClose = jest.fn();
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWsConfig);
@@ -330,7 +356,7 @@ describe("Messages acknowledgement", () => {
     icWs["_clientKey"] = originalClientKey;
 
     // send a random application message
-    icWs.send(new Uint8Array([1, 2, 3]));
+    icWs.send({ text: "test" });
 
     // wait for the second message from the client
     await mockWsServer.nextMessage;
@@ -345,10 +371,10 @@ describe("Messages acknowledgement", () => {
 
   it("acknowledges messages", async () => {
     const ackMessageTimeoutMs = 2000;
-    const icWsConfig: IcWebSocketConfig = {
+    const icWsConfig = createWsConfig({
       ...icWebsocketConfig,
       ackMessageTimeout: ackMessageTimeoutMs,
-    };
+    });
     const onMessage = jest.fn();
     const onError = jest.fn();
     const onClose = jest.fn();
@@ -372,7 +398,7 @@ describe("Messages acknowledgement", () => {
     icWs["_clientKey"] = originalClientKey;
 
     // send a random application message
-    icWs.send(new Uint8Array([1, 2, 3]));
+    icWs.send({ text: "test" });
 
     // wait for the second message from the client
     await mockWsServer.nextMessage;
@@ -391,10 +417,10 @@ describe("Messages acknowledgement", () => {
 
   it("send an ack message after receiving the ack", async () => {
     const ackMessageTimeoutMs = 2000;
-    const icWsConfig: IcWebSocketConfig = {
+    const icWsConfig = createWsConfig({
       ...icWebsocketConfig,
       ackMessageTimeout: ackMessageTimeoutMs,
-    };
+    });
     const onMessage = jest.fn();
     const onError = jest.fn();
     const onClose = jest.fn();
@@ -418,7 +444,7 @@ describe("Messages acknowledgement", () => {
     icWs["_clientKey"] = originalClientKey;
 
     // send a random application message
-    icWs.send(new Uint8Array([1, 2, 3]));
+    icWs.send({ text: "test" });
 
     // wait for the second message from the client
     await mockWsServer.nextMessage;

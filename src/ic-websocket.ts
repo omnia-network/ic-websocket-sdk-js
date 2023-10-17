@@ -1,18 +1,23 @@
 import {
+  Actor,
+  ActorSubclass,
   Cbor,
   HttpAgent,
   SignIdentity,
 } from "@dfinity/agent";
+import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 import {
   CanisterAckMessageContent,
   CanisterWsMessageArguments,
   ClientKeepAliveMessageContent,
   ClientKey,
+  GetApplicationMessageType,
   WebsocketMessage,
   _WS_CANISTER_SERVICE,
   decodeWebsocketServiceMessageContent,
   encodeWebsocketServiceMessageContent,
+  extractApplicationMessageIdlFromActor,
   isClientKeyEq,
 } from "./idl";
 import logger from "./logger";
@@ -34,11 +39,18 @@ import { WsAgent } from "./agent";
  */
 const DEFAULT_ACK_MESSAGE_TIMEOUT_MS = 90000;
 
-export type IcWebSocketConfig = {
+/**
+ * Interface to create a new IcWebSocketConfig. For a simple configuration, use {@link createWsConfig}.
+ */
+export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
   /**
    * The canister id of the canister to open the WebSocket to.
    */
   canisterId: string;
+  /**
+   * The canister actor used to serialize and deserialize the application messages.
+   */
+  canisterActor: ActorSubclass<S>;
   /**
    * The identity to use for signing messages. If empty, a new random temporary identity will be generated.
    */
@@ -56,10 +68,20 @@ export type IcWebSocketConfig = {
   ackMessageTimeout?: number;
 };
 
+/**
+ * Creates a new {@link IcWebSocketConfig} from arguments.
+ */
+export const createWsConfig = <S extends _WS_CANISTER_SERVICE>(c: IcWebSocketConfig<S>): IcWebSocketConfig<S> => c;
+
 type WsParameters = ConstructorParameters<typeof WebSocket>;
 
-export default class IcWebSocket {
+export default class IcWebSocket<
+  S extends _WS_CANISTER_SERVICE,
+  ApplicationMessageType = GetApplicationMessageType<S>
+> {
   public readonly canisterId: Principal;
+  private readonly _canisterActor: ActorSubclass<S>;
+  private readonly _applicationMessageIdl: IDL.Type<ApplicationMessageType>;
   private readonly _httpAgent: HttpAgent;
   private _wsAgent: WsAgent | null = null;
   private readonly _wsInstance: WebSocket;
@@ -72,10 +94,10 @@ export default class IcWebSocket {
   private _ackMessagesQueue: AckMessagesQueue;
   private _clientKey: ClientKey;
 
-  onclose: ((this: IcWebSocket, ev: CloseEvent) => any) | null = null;
-  onerror: ((this: IcWebSocket, ev: ErrorEvent) => any) | null = null;
-  onmessage: ((this: IcWebSocket, ev: MessageEvent<Uint8Array>) => any) | null = null;
-  onopen: ((this: IcWebSocket, ev: Event) => any) | null = null;
+  onclose: ((this: IcWebSocket<S, ApplicationMessageType>, ev: CloseEvent) => any) | null = null;
+  onerror: ((this: IcWebSocket<S, ApplicationMessageType>, ev: ErrorEvent) => any) | null = null;
+  onmessage: ((this: IcWebSocket<S, ApplicationMessageType>, ev: MessageEvent<ApplicationMessageType>) => any) | null = null;
+  onopen: ((this: IcWebSocket<S, ApplicationMessageType>, ev: Event) => any) | null = null;
 
   /**
    * Returns the state of the WebSocket object's connection.
@@ -94,10 +116,16 @@ export default class IcWebSocket {
    * Creates a new IcWebSocket instance, waiting **30 seconds** for the WebSocket to be open.
    * @param url The gateway address.
    * @param protocols The protocols to use in the WebSocket.
-   * @param config The IcWebSocket configuration.
+   * @param config The IcWebSocket configuration. Use {@link createWsConfig} to create a new configuration.
    */
-  constructor(url: WsParameters[0], protocols: WsParameters[1], config: IcWebSocketConfig) {
+  constructor(url: WsParameters[0], protocols: WsParameters[1], config: IcWebSocketConfig<S>) {
     this.canisterId = Principal.fromText(config.canisterId);
+
+    if (!config.canisterActor) {
+      throw new Error("Canister actor is required");
+    }
+    this._canisterActor = config.canisterActor;
+    this._applicationMessageIdl = extractApplicationMessageIdlFromActor(this._canisterActor);
 
     if (!config.identity) {
       throw new Error("Identity is required");
@@ -144,16 +172,14 @@ export default class IcWebSocket {
     this._bindWsEvents();
   }
 
-  public send(data: Uint8Array) {
+  public send(message: ApplicationMessageType) {
     if (!this._isConnectionEstablished) {
       throw new Error("Connection is not established yet");
     }
 
-    if (!(data instanceof Uint8Array)) {
-      throw new Error("Data must be a Uint8Array");
-    }
+    const data = IDL.encode([this._applicationMessageIdl], [message]);
 
-    this._outgoingMessagesQueue.addAndProcess(data);
+    this._outgoingMessagesQueue.addAndProcess(new Uint8Array(data));
   }
 
   public getPrincipal(): Principal {
@@ -432,17 +458,18 @@ export default class IcWebSocket {
     }, "Calling onopen callback failed");
   }
 
-  private async _callOnMessageCallback(data: Uint8Array): Promise<boolean> {
-    await safeExecute(() => {
-      if (this.onmessage) {
-        logger.debug("[onmessage] Calling onmessage callback");
-        this.onmessage.call(this, new MessageEvent("message", { data }))
-      } else {
-        logger.warn("[onmessage] No onmessage callback defined");
-      }
-    }, "Calling onmessage callback failed");
+  private async _callOnMessageCallback(data: Uint8Array): Promise<void> {
+    if (this.onmessage) {
+      logger.debug("[onmessage] Calling onmessage callback");
+      const decoded = IDL.decode([this._applicationMessageIdl], data)[0] as ApplicationMessageType;
 
-    return true;
+      await safeExecute(() => {
+        this.onmessage!.call(this, new MessageEvent("message", { data: decoded }))
+      }, "Calling onmessage callback failed");
+
+    } else {
+      logger.warn("[onmessage] No onmessage callback defined");
+    }
   }
 
   private _callOnErrorCallback(error: Error) {
