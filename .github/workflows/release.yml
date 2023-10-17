@@ -43,7 +43,7 @@ jobs:
         uses: mathieudutour/github-tag-action@v6.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          custom_tag: v${{ needs.publish.outputs.version }}
+          custom_tag: ${{ needs.publish.outputs.version }}
 
   release:
     needs: tag
