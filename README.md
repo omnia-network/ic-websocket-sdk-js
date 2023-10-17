@@ -9,16 +9,8 @@ This repository contains the Rust implementation of IC WebSocket CDK. For more i
 You can install the library using npm:
 
 ```bash
-npm install --save https://github.com/omnia-network/ic-websocket-sdk-js.git#<last-commit-on-this-repo>
+npm install --save ic-websocket-js
 ```
-
-For example, a valid installation command would be:
-
-```bash
-npm install --save https://github.com/omnia-network/ic-websocket-sdk-js.git#080acdb812fd5ab14bdfd314327b34d62a843137
-```
-
-This package will soon be published on npm.
 
 ## Usage
 
