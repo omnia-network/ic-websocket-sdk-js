@@ -2,6 +2,7 @@
   "name": "ic-websocket-js",
   "version": "0.1.1",
   "description": "IC WebSocket on the Internet Computer",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/omnia-network/ic-websocket-sdk-js"
