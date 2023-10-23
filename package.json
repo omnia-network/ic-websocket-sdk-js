@@ -1,18 +1,26 @@
 {
   "name": "ic-websocket-js",
-  "version": "0.1.0",
-  "description": "IC WebSocket on the IC",
+  "version": "0.1.2",
+  "description": "IC WebSocket on the Internet Computer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/omnia-network/ic-websocket-sdk-js"
+  },
+  "bugs": {
+    "url": "https://github.com/omnia-network/ic-websocket-sdk-js/issues"
+  },
   "keywords": [
     "Internet Computer",
     "Rust",
     "JavaScript",
-    "Canister"
+    "Canister",
+    "WebSocket"
   ],
   "main": "./lib/cjs/index",
   "module": "./lib/esm/index",
   "scripts": {
     "build": "tsc -b && tsc -p tsconfig-cjs.json",
-    "postinstall": "npm run build",
     "test": "LOG_LEVEL=debug jest"
   },
   "devDependencies": {
@@ -50,10 +58,12 @@
     "last 2 edge version"
   ],
   "dependencies": {
+    "loglevel": "^1.8.1"
+  },
+  "peerDependencies": {
     "@dfinity/agent": "^0.19.2",
     "@dfinity/candid": "^0.19.2",
     "@dfinity/identity-secp256k1": "^0.19.2",
-    "@dfinity/principal": "^0.19.2",
-    "loglevel": "^1.8.1"
+    "@dfinity/principal": "^0.19.2"
   }
 }
