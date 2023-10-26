@@ -1,6 +1,7 @@
 import { IDL } from "@dfinity/candid";
 import type { Principal } from '@dfinity/principal';
-import type { ActorMethod } from '@dfinity/agent';
+import { Actor, ActorSubclass, type ActorMethod } from '@dfinity/agent';
+import type { GetInnerType } from "./types";
 
 export type ClientPrincipal = Principal;
 export type ClientKey = {
@@ -22,13 +23,18 @@ export type CanisterWsOpenArguments = {
 };
 export type CanisterWsOpenResult = { 'Ok': null } |
 { 'Err': string };
-export interface _WS_CANISTER_SERVICE {
+export interface _WS_CANISTER_SERVICE<T = any> {
   'ws_message': ActorMethod<
-    [CanisterWsMessageArguments],
+    [CanisterWsMessageArguments, [] | [T]],
     CanisterWsMessageResult
   >,
   'ws_open': ActorMethod<[CanisterWsOpenArguments], CanisterWsOpenResult>,
 };
+
+/**
+ * Extracts the application message type from the canister service definition.
+ */
+export type GetApplicationMessageType<Service extends _WS_CANISTER_SERVICE> = Exclude<GetInnerType<Service["ws_message"]>[1], []>[0];
 
 export const ClientPrincipalIdl = IDL.Principal;
 export const ClientKeyIdl = IDL.Record({
@@ -55,7 +61,7 @@ const CanisterWsOpenResultIdl = IDL.Variant({
 });
 
 export const wsOpenIdl = IDL.Func([CanisterWsOpenArgumentsIdl], [CanisterWsOpenResultIdl], []);
-export const wsMessageIdl = IDL.Func([CanisterWsMessageArgumentsIdl], [CanisterWsMessageResultIdl], []);
+export const wsMessageIdl = IDL.Func([CanisterWsMessageArgumentsIdl, IDL.Opt(IDL.Null)], [CanisterWsMessageResultIdl], []);
 
 export type CanisterOpenMessageContent = {
   'client_key': ClientKey,
@@ -103,4 +109,29 @@ export const encodeWebsocketServiceMessageContent = (msg: WebsocketServiceMessag
 
 export const isClientKeyEq = (a: ClientKey, b: ClientKey): boolean => {
   return a.client_principal.compareTo(b.client_principal) === "eq" && a.client_nonce === b.client_nonce;
-}
+};
+
+/**
+ * Extracts the message type from the canister service definition.
+ * 
+ * @throws {Error} if the canister does not implement the ws_message method
+ * @throws {Error} if the application message type is not optional
+ */
+export const extractApplicationMessageIdlFromActor = <T, S extends _WS_CANISTER_SERVICE<T>>(actor: ActorSubclass<S>): IDL.Type<T> => {
+  const wsMessageMethod = Actor.interfaceOf(actor)._fields.find((f) => f[0] === "ws_message");
+
+  if (!wsMessageMethod) {
+    throw new Error("Canister does not implement ws_message method");
+  }
+
+  if (wsMessageMethod[1].argTypes.length !== 2) {
+    throw new Error("ws_message method must have 2 arguments");
+  }
+
+  const applicationMessageArg = wsMessageMethod[1].argTypes[1] as IDL.OptClass<T>;
+  if (!(applicationMessageArg instanceof IDL.OptClass)) {
+    throw new Error("Application message type must be optional in the ws_message arguments");
+  }
+
+  return applicationMessageArg["_type"]; // extract the underlying option type
+};

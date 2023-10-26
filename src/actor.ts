@@ -37,4 +37,4 @@ export const callCanisterWsMessage = async (
   canisterId: Principal,
   agent: WsAgent,
   args: CanisterWsMessageArguments,
-): Promise<void> => _callCanisterMethod(canisterId, agent, "ws_message", wsMessageIdl, [args]);
+): Promise<void> => _callCanisterMethod(canisterId, agent, "ws_message", wsMessageIdl, [args, []]);
