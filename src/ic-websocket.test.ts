@@ -25,6 +25,7 @@ const icWebsocketConfig = createWsConfig({
   canisterActor: testCanisterActor,
   networkUrl: icNetworkUrl,
   identity: generateRandomIdentity(),
+  maxCertificateAgeInMinutes: 60 * 24 * 365, // 1 year. Since we're using pre-generated certificates, we need to set it really far in the future
 });
 
 //// Mock Servers

@@ -21,13 +21,15 @@ export const isMessageBodyValid = async (
   certificate: ArrayBuffer,
   tree: ArrayBuffer,
   agent: HttpAgent,
+  maxCertificateAgeInMinutes: number,
 ): Promise<boolean> => {
   let cert;
   try {
     cert = await Certificate.create({
       certificate,
       canisterId,
-      rootKey: agent.rootKey!
+      rootKey: agent.rootKey!,
+      maxAgeInMinutes: maxCertificateAgeInMinutes,
     });
   } catch (error) {
     logger.error("[certification] Error creating certificate:", error);

@@ -15,6 +15,8 @@ const messageToVerify: ClientIncomingMessage = {
   cert: new Uint8Array(fromHex("d9d9f7a2647472656583018301830183024863616e6973746572830183024a8000000000100000010183018301830183024e6365727469666965645f646174618203582087be17d7ba688bc4fb13d61f3d8d5642df92536e40da98facba7ba0450ea59e082045820f8d20e36feb79f8495eb4c632b7a04171599957c8c267f55b2156d89b5c1e424820458200d3dc76c69e69f12678a2e9a5a6859579ceb28350608e69f1902055650edaf7f820458209e5663705fa61a6ca53ee4a61daa4621e8ece0febd99b334d0ae625aad9f3f6e8204582077d28a3053cd3845a065a879ce36849add41cae9e6a56d452e328194b38e15ec82045820932e7cd3d24b95ff6c0fea6086fc624ee43b0875101777e089ba915ef7ded93d82045820fbb733f900879885afed4ace8eb90b19245f8386e7537769c072e9fded13c6ad830182045820ae29f371a7ae2a4af8bb125ef23486745500f8cb31a02c35cc7155053b67cce683024474696d6582034992da96e7ae90a2ba17697369676e61747572655830932828f169fdce98969c417666f38002e2826081deb756e94c73091a1b7c0455f6c2f3ccc509ab576c8e6f8753b7d85b")),
   tree: new Uint8Array(fromHex("d9d9f7830249776562736f636b657483025854737164666c2d6d72346b6d2d3268666a792d67616a716f2d78717668372d6866346d662d6e726134692d336974366c2d6e656177342d736f6f6c772d7461655f303030303030303030303030303030303030303082035820215b2aae42ccf90c6fd928fec029d0b9308e97d0c40f8772100a30097b004bb5")),
 };
+// the max age of the certificate. Since we're using pre-generated certificates, we need to set it really far in the future
+const maxCertificateAgeInMinutes = 60 * 24 * 365; // 1 year
 
 const agent = new HttpAgent();
 agent.rootKey = localReplicaRootKey;
@@ -28,6 +30,7 @@ describe("Utils of the IcWebSocket", () => {
       messageToVerify.cert,
       messageToVerify.tree,
       agent,
+      maxCertificateAgeInMinutes,
     );
 
     expect(isValid).toBe(true);
@@ -41,6 +44,7 @@ describe("Utils of the IcWebSocket", () => {
       messageToVerify.cert,
       messageToVerify.tree,
       agent,
+      maxCertificateAgeInMinutes,
     )).rejects.toThrow("Could not find certified data for this canister in the certificate.");
   });
 
@@ -52,6 +56,7 @@ describe("Utils of the IcWebSocket", () => {
       messageToVerify.cert,
       messageToVerify.tree,
       agent,
+      maxCertificateAgeInMinutes,
     );
 
     expect(isValid).toBe(false);
@@ -65,6 +70,7 @@ describe("Utils of the IcWebSocket", () => {
       messageToVerify.cert,
       messageToVerify.tree,
       agent,
+      maxCertificateAgeInMinutes,
     );
 
     expect(isValid).toBe(false);
@@ -78,6 +84,7 @@ describe("Utils of the IcWebSocket", () => {
       new Uint8Array([0, 1, 2, 3]),
       messageToVerify.tree,
       agent,
+      maxCertificateAgeInMinutes,
     );
 
     expect(isValid).toBe(false);
@@ -92,6 +99,7 @@ describe("Utils of the IcWebSocket", () => {
       // another tree, valid but not the same as the one used to generate the data
       fromHex("d9d9f7830249776562736f636b657483025854737164666c2d6d72346b6d2d3268666a792d67616a716f2d78717668372d6866346d662d6e726134692d336974366c2d6e656177342d736f6f6c772d7461655f3030303030303030303030303030303030303030820358200a621494d244cd4426e1f3c2ac6942bb21a5312f613f534e6da5182571757403"),
       agent,
+      maxCertificateAgeInMinutes,
     );
 
     expect(isValid).toBe(false);
@@ -106,6 +114,7 @@ describe("Utils of the IcWebSocket", () => {
       messageToVerify.tree,
       // the default agent uses the mainnet replica root key
       new HttpAgent(),
+      maxCertificateAgeInMinutes,
     );
 
     expect(isValid).toBe(false);

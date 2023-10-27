@@ -66,6 +66,12 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
    * @default 90000 (90 seconds = 3/2 default send ack period on the canister)
    */
   ackMessageTimeout?: number;
+  /**
+   * The maximum age of the certificate received from the canister, in minutes. You won't likely need to set this parameter. Used in tests.
+   * 
+   * @default 5 (5 minutes)
+   */
+  maxCertificateAgeInMinutes?: number;
 };
 
 /**
@@ -93,6 +99,7 @@ export default class IcWebSocket<
   private _outgoingMessagesQueue: BaseQueue<Uint8Array>;
   private _ackMessagesQueue: AckMessagesQueue;
   private _clientKey: ClientKey;
+  private _maxCertificateAgeInMinutes = 5;
 
   onclose: ((this: IcWebSocket<S, ApplicationMessageType>, ev: CloseEvent) => any) | null = null;
   onerror: ((this: IcWebSocket<S, ApplicationMessageType>, ev: ErrorEvent) => any) | null = null;
@@ -166,6 +173,10 @@ export default class IcWebSocket<
       expirationMs: config.ackMessageTimeout || DEFAULT_ACK_MESSAGE_TIMEOUT_MS,
       timeoutExpiredCallback: this._onAckMessageTimeout.bind(this),
     });
+
+    if (config.maxCertificateAgeInMinutes) {
+      this._maxCertificateAgeInMinutes = config.maxCertificateAgeInMinutes;
+    }
 
     this._wsInstance = new WebSocket(url, protocols); // Gateway address. Here localhost to reproduce the demo.
     this._wsInstance.binaryType = "arraybuffer";
@@ -408,7 +419,15 @@ export default class IcWebSocket<
     const tree = incomingMessage.tree;
 
     // Verify the certificate (canister signature)
-    const isValid = await isMessageBodyValid(this.canisterId, key, content, cert, tree, this._httpAgent);
+    const isValid = await isMessageBodyValid(
+      this.canisterId,
+      key,
+      content,
+      cert,
+      tree,
+      this._httpAgent,
+      this._maxCertificateAgeInMinutes,
+    );
 
     return isValid;
   }
