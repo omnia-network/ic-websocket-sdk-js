@@ -162,38 +162,37 @@ export class WsAgent {
       ingress_expiry,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedRequest = (await this._transform({
       endpoint: Endpoint.Call,
       message: submit,
     })) as WsAgentSubmitRequest;
 
-    const envelope = await this._signRequest(transformedRequest.message, id);
+    // we need to adapt out ws request to the identity's transform
+    // in order to get the signed request
+    const idTransformedRequest = await id.transformRequest({
+      // mock the request to be compatible
+      request: {
+        body: null,
+        method: 'POST',
+        headers: {},
+      },
+      endpoint: Endpoint.Call,
+      body: transformedRequest.message,
+    }) as { body: Envelope<CallRequest> };
+
     const message: WsAgentRequestMessage<CallRequest> = {
-      envelope,
+      envelope: idTransformedRequest.body,
     };
 
     this._requestAndRetry(message);
-  }
-
-  private async _signRequest<T extends Record<string, any>>(
-    message: T,
-    identity: SignIdentity,
-  ): Promise<Envelope<T>> {
-    const requestId = requestIdOf(message);
-    return {
-      content: message,
-      sender_pubkey: identity.getPublicKey().toDer(),
-      sender_sig: await identity.sign(concat(domainSeparator, requestId)),
-    };
   }
 
   /**
    * Sends a fire-and-forget request body to the WebSocket Gateway.
    * If the request fails, the request 
    */
-  private _requestAndRetry<T>(
-    message: WsAgentRequestMessage<T>,
+  private _requestAndRetry(
+    message: WsAgentRequestMessage<CallRequest>,
     tries = 0,
   ): void {
     const messageBytes = Cbor.encode(message);
