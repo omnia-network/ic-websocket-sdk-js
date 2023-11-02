@@ -120,7 +120,7 @@ describe("IcWebsocket class", () => {
     const openMessageBytes = await mockWsServer.nextMessage as ArrayBuffer;
 
     // reconstruct the message that the client should send
-    const clientKey = icWs["_clientKey"];
+    const clientKey = icWs["_clientKey"]!;
     const { envelope: { content: openMessageContent } }: WsAgentRequestMessage<CallRequest> = Cbor.decode(openMessageBytes);
 
     expect(canisterId.compareTo(
@@ -172,7 +172,7 @@ describe("IcWebsocket class", () => {
     icWs.onerror = onError;
     await mockWsServer.connected;
 
-    const originalClientKey = { ...icWs["_clientKey"] };
+    const originalClientKey = { ...icWs["_clientKey"]! };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -205,7 +205,7 @@ describe("IcWebsocket class", () => {
     icWs.onclose = onClose;
     await mockWsServer.connected;
 
-    const originalClientKey = { ...icWs["_clientKey"] };
+    const originalClientKey = { ...icWs["_clientKey"]! };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -240,7 +240,7 @@ describe("IcWebsocket class", () => {
     icWs.onclose = onClose;
     await mockWsServer.connected;
 
-    const originalClientKey = { ...icWs["_clientKey"] };
+    const originalClientKey = { ...icWs["_clientKey"]! };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -280,7 +280,7 @@ describe("IcWebsocket class", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"] };
+    const originalClientKey = { ...icWs["_clientKey"]! };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -347,7 +347,7 @@ describe("Messages acknowledgement", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"] };
+    const originalClientKey = { ...icWs["_clientKey"]! };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -389,7 +389,7 @@ describe("Messages acknowledgement", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"] };
+    const originalClientKey = { ...icWs["_clientKey"]! };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -435,7 +435,7 @@ describe("Messages acknowledgement", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"] };
+    const originalClientKey = { ...icWs["_clientKey"]! };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
