@@ -13,6 +13,7 @@ import { INVALID_MESSAGE_KEY, VALID_ACK_MESSAGE, VALID_MESSAGE_SEQ_NUM_2, VALID_
 import { sleep } from "./test/helpers";
 import { getTestCanisterActor, getTestCanisterActorWithoutMethods, getTestCanisterActorWrongArgs, getTestCanisterActorWrongOpt } from "./test/actor";
 import type { WsAgentRequestMessage } from "./agent/types";
+import { GATEWAY_PRINCIPAL } from "./test/constants";
 
 const wsGatewayAddress = "ws://127.0.0.1:8080";
 // the canister from which the application message was sent (needed to verify the message certificate)
@@ -22,6 +23,7 @@ const testCanisterActor = getTestCanisterActor(canisterId);
 
 const icWebsocketConfig = createWsConfig({
   canisterId: canisterId.toText(),
+  gatewayPrincipal: GATEWAY_PRINCIPAL.toText(),
   canisterActor: testCanisterActor,
   networkUrl: icNetworkUrl,
   identity: generateRandomIdentity(),
@@ -63,6 +65,46 @@ describe("IcWebsocket class", () => {
 
     expect(onOpen).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalled();
+  });
+
+  it("throws an error if the canisterId is not provided or invalid", () => {
+    let icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    // @ts-ignore
+    delete icWsConfig.canisterId;
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError();
+
+    icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    icWsConfig.canisterId = "invalid";
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError();
+  });
+
+  it("throws an error if the gatewayPrincipal is not provided or invalid", () => {
+    let icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    // @ts-ignore
+    delete icWsConfig.gatewayPrincipal;
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError();
+
+    icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    icWsConfig.gatewayPrincipal = "invalid";
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError();
+  });
+
+  it("passes if the canisterId is a valid string or principal", () => {
+    let icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).not.toThrowError();
+
+    icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    icWsConfig.canisterId = canisterId;
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).not.toThrowError();
+  });
+
+  it("passes if the gatewayPrincipal is a valid string or principal", () => {
+    let icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).not.toThrowError();
+    
+    icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    icWsConfig.gatewayPrincipal = GATEWAY_PRINCIPAL;
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).not.toThrowError();
   });
 
   it("throws an error if the canisterActor is not provided", () => {
@@ -132,6 +174,7 @@ describe("IcWebsocket class", () => {
     expect(openMessageContent.method_name).toEqual("ws_open");
     expect(IDL.decode(wsOpenIdl.argTypes, openMessageContent.arg)[0]).toMatchObject<CanisterWsOpenArguments>({
       client_nonce: clientKey.client_nonce,
+      gateway_principal: GATEWAY_PRINCIPAL,
     });
   });
 

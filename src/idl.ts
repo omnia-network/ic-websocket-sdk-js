@@ -3,7 +3,8 @@ import type { Principal } from '@dfinity/principal';
 import { Actor, ActorSubclass, type ActorMethod } from '@dfinity/agent';
 import type { GetInnerType } from "./types";
 
-export type ClientPrincipal = Principal;
+type ClientPrincipal = Principal;
+type GatewayPrincipal = Principal;
 export type ClientKey = {
   'client_principal': ClientPrincipal,
   'client_nonce': bigint,
@@ -20,6 +21,7 @@ export type CanisterWsMessageResult = { 'Ok': null } |
 { 'Err': string };
 export type CanisterWsOpenArguments = {
   'client_nonce': bigint,
+  'gateway_principal': GatewayPrincipal,
 };
 export type CanisterWsOpenResult = { 'Ok': null } |
 { 'Err': string };
@@ -36,8 +38,9 @@ export interface _WS_CANISTER_SERVICE<T = any> {
  */
 export type GetApplicationMessageType<Service extends _WS_CANISTER_SERVICE> = Exclude<GetInnerType<Service["ws_message"]>[1], []>[0];
 
-export const ClientPrincipalIdl = IDL.Principal;
-export const ClientKeyIdl = IDL.Record({
+const ClientPrincipalIdl = IDL.Principal;
+const GatewayPrincipalIdl = IDL.Principal;
+const ClientKeyIdl = IDL.Record({
   'client_principal': ClientPrincipalIdl,
   'client_nonce': IDL.Nat64,
 });
@@ -49,12 +52,15 @@ const WebsocketMessageIdl = IDL.Record({
   'timestamp': IDL.Nat64,
   'is_service_message': IDL.Bool,
 });
-const CanisterWsMessageArgumentsIdl = IDL.Record({ 'msg': WebsocketMessageIdl });
-const CanisterWsMessageResultIdl = IDL.Variant({
+export const CanisterWsMessageArgumentsIdl = IDL.Record({ 'msg': WebsocketMessageIdl });
+export const CanisterWsMessageResultIdl = IDL.Variant({
   'Ok': IDL.Null,
   'Err': IDL.Text,
 });
-const CanisterWsOpenArgumentsIdl = IDL.Record({ 'client_nonce': IDL.Nat64 });
+const CanisterWsOpenArgumentsIdl = IDL.Record({
+  'client_nonce': IDL.Nat64,
+  'gateway_principal': GatewayPrincipalIdl,
+});
 const CanisterWsOpenResultIdl = IDL.Variant({
   'Ok': IDL.Null,
   'Err': IDL.Text,
@@ -63,7 +69,7 @@ const CanisterWsOpenResultIdl = IDL.Variant({
 export const wsOpenIdl = IDL.Func([CanisterWsOpenArgumentsIdl], [CanisterWsOpenResultIdl], []);
 export const wsMessageIdl = IDL.Func([CanisterWsMessageArgumentsIdl, IDL.Opt(IDL.Null)], [CanisterWsMessageResultIdl], []);
 
-export type CanisterOpenMessageContent = {
+type CanisterOpenMessageContent = {
   'client_key': ClientKey,
 };
 export type CanisterAckMessageContent = {
@@ -80,16 +86,16 @@ export type WebsocketServiceMessageContent = {
   KeepAliveMessage: ClientKeepAliveMessageContent,
 };
 
-export const CanisterOpenMessageContentIdl = IDL.Record({
+const CanisterOpenMessageContentIdl = IDL.Record({
   'client_key': ClientKeyIdl,
 });
-export const CanisterAckMessageContentIdl = IDL.Record({
+const CanisterAckMessageContentIdl = IDL.Record({
   'last_incoming_sequence_num': IDL.Nat64,
 });
-export const ClientKeepAliveMessageContentIdl = IDL.Record({
+const ClientKeepAliveMessageContentIdl = IDL.Record({
   'last_incoming_sequence_num': IDL.Nat64,
 });
-export const WebsocketServiceMessageContentIdl = IDL.Variant({
+const WebsocketServiceMessageContentIdl = IDL.Variant({
   'OpenMessage': CanisterOpenMessageContentIdl,
   'AckMessage': CanisterAckMessageContentIdl,
   'KeepAliveMessage': ClientKeepAliveMessageContentIdl,

@@ -46,7 +46,11 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
   /**
    * The canister id of the canister to open the WebSocket to.
    */
-  canisterId: string;
+  canisterId: string | Principal;
+  /**
+   * The principal of the gateway to which the WebSocket will be opened.
+   */
+  gatewayPrincipal: string | Principal;
   /**
    * The canister actor used to serialize and deserialize the application messages.
    */
@@ -86,6 +90,7 @@ export default class IcWebSocket<
   ApplicationMessageType = GetApplicationMessageType<S>
 > {
   public readonly canisterId: Principal;
+  public readonly gatewayPrincipal: Principal;
   private readonly _canisterActor: ActorSubclass<S>;
   private readonly _applicationMessageIdl: IDL.Type<ApplicationMessageType>;
   private readonly _httpAgent: HttpAgent;
@@ -126,7 +131,8 @@ export default class IcWebSocket<
    * @param config The IcWebSocket configuration. Use {@link createWsConfig} to create a new configuration.
    */
   constructor(url: WsParameters[0], protocols: WsParameters[1], config: IcWebSocketConfig<S>) {
-    this.canisterId = Principal.fromText(config.canisterId);
+    this.canisterId = Principal.from(config.canisterId);
+    this.gatewayPrincipal = Principal.from(config.gatewayPrincipal);
 
     if (!config.canisterActor) {
       throw new Error("Canister actor is required");
@@ -228,6 +234,7 @@ export default class IcWebSocket<
         this._wsAgent,
         {
           client_nonce: this._clientKey.client_nonce,
+          gateway_principal: this.gatewayPrincipal,
         }
       );
 
