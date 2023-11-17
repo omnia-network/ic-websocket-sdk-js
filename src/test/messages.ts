@@ -1,9 +1,22 @@
-import { fromHex } from "@dfinity/agent";
-import { ClientIncomingMessage } from "../types";
+import { Cbor, fromHex } from "@dfinity/agent";
+import { ClientIncomingMessage, GatewayHandshakeMessage } from "../types";
 import { GATEWAY_PRINCIPAL } from "./constants";
 
-// Messages generated from a canister running in a local replica
+// Messages generated from a gateway
+export const VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY: GatewayHandshakeMessage = {
+  gateway_principal: GATEWAY_PRINCIPAL,
+};
 
+export const INVALID_HANDSHAKE_MESSAGE_FROM_GATEWAY: GatewayHandshakeMessage = {
+  // @ts-ignore
+  gateway_principal: "",
+};
+
+export const encodeHandshakeMessage = (message: GatewayHandshakeMessage): ArrayBuffer => {
+  return Cbor.encode(message);
+}
+
+// Messages generated from a canister running in a local replica
 export const VALID_OPEN_MESSAGE: ClientIncomingMessage = {
   key: `${GATEWAY_PRINCIPAL}_00000000000000000000`,
   content: new Uint8Array(fromHex("d9d9f7a56a636c69656e745f6b6579a270636c69656e745f7072696e636970616c581d335a83e713c14f0abf2fa5c1fe2d1e4ef23e94674709a6efbd102c7e026c636c69656e745f6e6f6e63651b500eeedc6a0443246c73657175656e63655f6e756d016974696d657374616d701b178e8b8e33b7a68b7269735f736572766963655f6d657373616765f567636f6e74656e7458614449444c046b03fdbd95cc0101bfd397b409039eb7f0ad0b036c01ebb49ce903026c02fa80a2940568bbd1eacd0e786c01d888abb90a78010000011d335a83e713c14f0abf2fa5c1fe2d1e4ef23e94674709a6efbd102c7e022443046adcee0e50")),

@@ -25,6 +25,8 @@ import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import {
   isClientIncomingMessage,
   type ClientIncomingMessage,
+  isGatewayHandshakeMessage,
+  type GatewayHandshakeMessage,
 } from "./types";
 import { callCanisterWsMessage, callCanisterWsOpen } from "./actor";
 import {
@@ -47,10 +49,6 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
    * The canister id of the canister to open the WebSocket to.
    */
   canisterId: string | Principal;
-  /**
-   * The principal of the gateway to which the WebSocket will be opened.
-   */
-  gatewayPrincipal: string | Principal;
   /**
    * The canister actor used to serialize and deserialize the application messages.
    */
@@ -90,7 +88,6 @@ export default class IcWebSocket<
   ApplicationMessageType = GetApplicationMessageType<S>
 > {
   public readonly canisterId: Principal;
-  public readonly gatewayPrincipal: Principal;
   private readonly _canisterActor: ActorSubclass<S>;
   private readonly _applicationMessageIdl: IDL.Type<ApplicationMessageType>;
   private readonly _httpAgent: HttpAgent;
@@ -99,11 +96,13 @@ export default class IcWebSocket<
   private readonly _identity: Promise<SignIdentity>;
   private _incomingSequenceNum = BigInt(1);
   private _outgoingSequenceNum = BigInt(0);
+  private _isHandshakeCompleted = false;
   private _isConnectionEstablished = false;
   private _incomingMessagesQueue: BaseQueue<ArrayBuffer>;
   private _outgoingMessagesQueue: BaseQueue<Uint8Array>;
   private _ackMessagesQueue: AckMessagesQueue;
   private _clientKey: ClientKey | null = null;
+  private _gatewayPrincipal: Principal | null = null;
   private _maxCertificateAgeInMinutes = 5;
 
   onclose: ((this: IcWebSocket<S, ApplicationMessageType>, ev: CloseEvent) => any) | null = null;
@@ -132,7 +131,6 @@ export default class IcWebSocket<
    */
   constructor(url: WsParameters[0], protocols: WsParameters[1], config: IcWebSocketConfig<S>) {
     this.canisterId = Principal.from(config.canisterId);
-    this.gatewayPrincipal = Principal.from(config.gatewayPrincipal);
 
     if (!config.canisterActor) {
       throw new Error("Canister actor is required");
@@ -214,6 +212,34 @@ export default class IcWebSocket<
   }
 
   private async _onWsOpen() {
+    this._incomingMessagesQueue.enableAndProcess();
+
+    logger.debug("[onWsOpen] WebSocket opened");
+  }
+
+  private _onWsMessage(event: MessageEvent<ArrayBuffer>) {
+    this._incomingMessagesQueue.addAndProcess(event.data);
+  }
+
+  private async _handleHandshakeMessage(handshakeMessage: GatewayHandshakeMessage): Promise<boolean> {
+    // at this point, we're sure that the gateway_principal is valid
+    // because the isGatewayHandshakeMessage function checks it
+    this._gatewayPrincipal = Principal.from(handshakeMessage.gateway_principal);
+    this._isHandshakeCompleted = true;
+
+    try {
+      await this._sendOpenMessage(this._gatewayPrincipal);
+    } catch (error) {
+      logger.error("[onWsMessage] Handshake message error:", error);
+      // if a handshake message fails, we can't continue
+      this._wsInstance.close(4000, "Handshake message error");
+      return false;
+    }
+
+    return true;
+  }
+
+  private async _sendOpenMessage(gatewayPrincipal: Principal) {
     this._clientKey = {
       client_principal: await this.getPrincipal(),
       client_nonce: randomBigInt(),
@@ -225,39 +251,37 @@ export default class IcWebSocket<
       ws: this._wsInstance,
     });
 
-    logger.debug("[onWsOpen] WebSocket opened, sending open message");
+    logger.debug("Sending open message");
 
-    try {
-      // Call the canister's ws_open method
-      await callCanisterWsOpen(
-        this.canisterId,
-        this._wsAgent,
-        {
-          client_nonce: this._clientKey.client_nonce,
-          gateway_principal: this.gatewayPrincipal,
-        }
-      );
+    // Call the canister's ws_open method
+    await callCanisterWsOpen(
+      this.canisterId,
+      this._wsAgent,
+      {
+        client_nonce: this._clientKey.client_nonce,
+        gateway_principal: gatewayPrincipal,
+      }
+    );
 
-      this._incomingMessagesQueue.enableAndProcess();
-
-      logger.debug("[onWsOpen] Open message sent, waiting for first open message from canister");
-    } catch (error) {
-      logger.error("[onWsOpen] Error:", error);
-      // if the first message fails, we can't continue
-      this._wsInstance.close(4000, "First message failed");
-    }
-  }
-
-  private _onWsMessage(event: MessageEvent<ArrayBuffer>) {
-    this._incomingMessagesQueue.addAndProcess(event.data);
+    logger.debug("Open message sent, waiting for first open message from canister");
   }
 
   private async _processIncomingMessage(message: ArrayBuffer): Promise<boolean> {
     try {
       const incomingMessage = this._decodeIncomingMessage(message);
+
+      // if the handshake is not completed yet, we have to treat the first message as HandshakeMessage
+      if (!this._isHandshakeCompleted) {
+        if (!isGatewayHandshakeMessage(incomingMessage)) {
+          throw new Error("First message is not a GatewayHandshakeMessage");
+        }
+
+        return this._handleHandshakeMessage(incomingMessage);
+      }
+
       // Check if the incoming message is a ClientIncomingMessage
       if (!isClientIncomingMessage(incomingMessage)) {
-        throw new Error("[onWsMessage] Incoming message is not a ClientIncomingMessage, ignoring message");
+        throw new Error("Incoming message is not a ClientIncomingMessage");
       }
 
       logger.debug("[onWsMessage] Incoming message received. Bytes:", message.byteLength, "bytes");
@@ -287,7 +311,7 @@ export default class IcWebSocket<
       await this._callOnMessageCallback(new Uint8Array(websocketMessage.content));
     } catch (error) {
       // for any error, we can't continue
-      logger.error("[onWsMessage] Error:", error);
+      logger.error("[onWsMessage]", error);
       this._callOnErrorCallback(new Error(`Error receiving message: ${error}`));
       this._wsInstance.close(4000, "Error receiving message");
       return false;
@@ -375,7 +399,7 @@ export default class IcWebSocket<
   }
 
   private _onWsError(error: Event) {
-    logger.error("[onWsError] Error:", error);
+    logger.error("[onWsError]", error);
     this._callOnErrorCallback(new Error(`WebSocket error: ${error}`));
   }
 
@@ -415,7 +439,13 @@ export default class IcWebSocket<
     return true;
   }
 
-  private _decodeIncomingMessage(buf: ArrayBuffer): ClientIncomingMessage {
+    /**
+   * CBOR decodes the incoming message from an ArrayBuffer and returns an object.
+   *
+   * @param {ArrayBuffer} buf - The ArrayBuffer containing the encoded message.
+   * @returns {any} The decoded object.
+   */
+  private _decodeIncomingMessage(buf: ArrayBuffer): any {
     return Cbor.decode(buf);
   }
 
