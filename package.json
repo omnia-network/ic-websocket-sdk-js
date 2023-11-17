@@ -60,9 +60,9 @@
     "loglevel": "^1.8.1"
   },
   "peerDependencies": {
-    "@dfinity/agent": "^0.20.0",
-    "@dfinity/candid": "^0.20.0",
-    "@dfinity/identity-secp256k1": "^0.20.0",
-    "@dfinity/principal": "^0.20.0"
+    "@dfinity/agent": "^0.20.1",
+    "@dfinity/candid": "^0.20.1",
+    "@dfinity/identity-secp256k1": "^0.20.1",
+    "@dfinity/principal": "^0.20.1"
   }
 }
