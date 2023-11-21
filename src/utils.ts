@@ -76,7 +76,7 @@ export const isMessageBodyValid = async (
     return false;
   }
 
-  return !!treeSha && areBuffersEqual(sha, treeSha);
+  return !!treeSha && areBuffersEqual(sha, treeSha as ArrayBuffer);
 };
 
 export const safeExecute = async <T>(

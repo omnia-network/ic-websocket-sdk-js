@@ -25,6 +25,8 @@ import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import {
   isClientIncomingMessage,
   type ClientIncomingMessage,
+  isGatewayHandshakeMessage,
+  type GatewayHandshakeMessage,
 } from "./types";
 import { callCanisterWsMessage, callCanisterWsOpen } from "./actor";
 import {
@@ -46,7 +48,7 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
   /**
    * The canister id of the canister to open the WebSocket to.
    */
-  canisterId: string;
+  canisterId: string | Principal;
   /**
    * The canister actor used to serialize and deserialize the application messages.
    */
@@ -54,7 +56,7 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
   /**
    * The identity to use for signing messages. If empty, a new random temporary identity will be generated.
    */
-  identity: SignIdentity | Promise<SignIdentity>,
+  identity: SignIdentity,
   /**
    * The IC network url to use for the underlying agent. It can be a local replica URL (e.g. http://localhost:4943) or the IC mainnet URL (https://icp0.io).
    */
@@ -91,14 +93,16 @@ export default class IcWebSocket<
   private readonly _httpAgent: HttpAgent;
   private _wsAgent: WsAgent | null = null;
   private readonly _wsInstance: WebSocket;
-  private readonly _identity: Promise<SignIdentity>;
+  private readonly _identity: SignIdentity;
   private _incomingSequenceNum = BigInt(1);
   private _outgoingSequenceNum = BigInt(0);
+  private _isHandshakeCompleted = false;
   private _isConnectionEstablished = false;
   private _incomingMessagesQueue: BaseQueue<ArrayBuffer>;
   private _outgoingMessagesQueue: BaseQueue<Uint8Array>;
   private _ackMessagesQueue: AckMessagesQueue;
-  private _clientKey: ClientKey | null = null;
+  private _clientKey: ClientKey;
+  private _gatewayPrincipal: Principal | null = null;
   private _maxCertificateAgeInMinutes = 5;
 
   onclose: ((this: IcWebSocket<S, ApplicationMessageType>, ev: CloseEvent) => any) | null = null;
@@ -126,7 +130,7 @@ export default class IcWebSocket<
    * @param config The IcWebSocket configuration. Use {@link createWsConfig} to create a new configuration.
    */
   constructor(url: WsParameters[0], protocols: WsParameters[1], config: IcWebSocketConfig<S>) {
-    this.canisterId = Principal.fromText(config.canisterId);
+    this.canisterId = Principal.from(config.canisterId);
 
     if (!config.canisterActor) {
       throw new Error("Canister actor is required");
@@ -140,7 +144,12 @@ export default class IcWebSocket<
     if (!(config.identity instanceof SignIdentity)) {
       throw new Error("Identity must be a SignIdentity");
     }
-    this._identity = Promise.resolve(config.identity);
+    this._identity = config.identity;
+
+    this._clientKey = {
+      client_principal: this.getPrincipal(),
+      client_nonce: randomBigInt(),
+    };
 
     if (!config.networkUrl) {
       throw new Error("Network url is required");
@@ -188,8 +197,8 @@ export default class IcWebSocket<
     this._outgoingMessagesQueue.addAndProcess(new Uint8Array(data));
   }
 
-  public async getPrincipal(): Promise<Principal> {
-    return (await this._identity).getPrincipal();
+  public getPrincipal(): Principal {
+    return this._identity.getPrincipal();
   }
 
   public close() {
@@ -208,49 +217,76 @@ export default class IcWebSocket<
   }
 
   private async _onWsOpen() {
-    this._clientKey = {
-      client_principal: await this.getPrincipal(),
-      client_nonce: randomBigInt(),
-    }
+    this._incomingMessagesQueue.enableAndProcess();
 
-    this._wsAgent = new WsAgent({
-      identity: this._identity,
-      httpAgent: this._httpAgent,
-      ws: this._wsInstance,
-    });
-
-    logger.debug("[onWsOpen] WebSocket opened, sending open message");
-
-    try {
-      // Call the canister's ws_open method
-      await callCanisterWsOpen(
-        this.canisterId,
-        this._wsAgent,
-        {
-          client_nonce: this._clientKey.client_nonce,
-        }
-      );
-
-      this._incomingMessagesQueue.enableAndProcess();
-
-      logger.debug("[onWsOpen] Open message sent, waiting for first open message from canister");
-    } catch (error) {
-      logger.error("[onWsOpen] Error:", error);
-      // if the first message fails, we can't continue
-      this._wsInstance.close(4000, "First message failed");
-    }
+    logger.debug("[onWsOpen] WebSocket opened");
   }
 
   private _onWsMessage(event: MessageEvent<ArrayBuffer>) {
     this._incomingMessagesQueue.addAndProcess(event.data);
   }
 
+  private async _handleHandshakeMessage(handshakeMessage: GatewayHandshakeMessage): Promise<boolean> {
+    // at this point, we're sure that the gateway_principal is valid
+    // because the isGatewayHandshakeMessage function checks it
+    this._gatewayPrincipal = Principal.from(handshakeMessage.gateway_principal);
+    this._isHandshakeCompleted = true;
+
+    try {
+      await this._sendOpenMessage();
+    } catch (error) {
+      logger.error("[onWsMessage] Handshake message error:", error);
+      // if a handshake message fails, we can't continue
+      this._wsInstance.close(4000, "Handshake message error");
+      return false;
+    }
+
+    return true;
+  }
+
+  private _initializeWsAgent() {
+    this._wsAgent = new WsAgent({
+      identity: this._identity,
+      httpAgent: this._httpAgent,
+      ws: this._wsInstance,
+    });
+  }
+
+  private async _sendOpenMessage() {
+    this._initializeWsAgent();
+
+    logger.debug("Sending open message");
+
+    // Call the canister's ws_open method
+    // at this point, all the class properties that we need are initialized
+    await callCanisterWsOpen(
+      this.canisterId,
+      this._wsAgent!,
+      {
+        client_nonce: this._clientKey.client_nonce,
+        gateway_principal: this._gatewayPrincipal!,
+      }
+    );
+
+    logger.debug("Open message sent, waiting for first open message from canister");
+  }
+
   private async _processIncomingMessage(message: ArrayBuffer): Promise<boolean> {
     try {
       const incomingMessage = this._decodeIncomingMessage(message);
+
+      // if the handshake is not completed yet, we have to treat the first message as HandshakeMessage
+      if (!this._isHandshakeCompleted) {
+        if (!isGatewayHandshakeMessage(incomingMessage)) {
+          throw new Error("First message is not a GatewayHandshakeMessage");
+        }
+
+        return this._handleHandshakeMessage(incomingMessage);
+      }
+
       // Check if the incoming message is a ClientIncomingMessage
       if (!isClientIncomingMessage(incomingMessage)) {
-        throw new Error("[onWsMessage] Incoming message is not a ClientIncomingMessage, ignoring message");
+        throw new Error("Incoming message is not a ClientIncomingMessage");
       }
 
       logger.debug("[onWsMessage] Incoming message received. Bytes:", message.byteLength, "bytes");
@@ -280,7 +316,7 @@ export default class IcWebSocket<
       await this._callOnMessageCallback(new Uint8Array(websocketMessage.content));
     } catch (error) {
       // for any error, we can't continue
-      logger.error("[onWsMessage] Error:", error);
+      logger.error("[onWsMessage]", error);
       this._callOnErrorCallback(new Error(`Error receiving message: ${error}`));
       this._wsInstance.close(4000, "Error receiving message");
       return false;
@@ -294,7 +330,7 @@ export default class IcWebSocket<
       const serviceMessage = decodeWebsocketServiceMessageContent(content as Uint8Array);
       if ("OpenMessage" in serviceMessage) {
         logger.debug("[onWsMessage] Received open message from canister");
-        if (!isClientKeyEq(serviceMessage.OpenMessage.client_key, this._clientKey!)) {
+        if (!isClientKeyEq(serviceMessage.OpenMessage.client_key, this._clientKey)) {
           throw new Error("Client key does not match");
         }
 
@@ -342,7 +378,7 @@ export default class IcWebSocket<
     });
     const keepAliveMessage = this._makeWsMessageArguments(new Uint8Array(bytes), true);
 
-    const sent = await this._sendMessage(keepAliveMessage);
+    const sent = await this._sendMessageToCanister(keepAliveMessage);
     if (!sent) {
       logger.error("[onWsMessage] Keep alive message was not sent");
       this._callOnErrorCallback(new Error("Keep alive message was not sent"));
@@ -368,14 +404,14 @@ export default class IcWebSocket<
   }
 
   private _onWsError(error: Event) {
-    logger.error("[onWsError] Error:", error);
+    logger.error("[onWsError]", error);
     this._callOnErrorCallback(new Error(`WebSocket error: ${error}`));
   }
 
   private _sendMessageFromQueue(messageContent: Uint8Array): Promise<boolean> {
     const message = this._makeWsMessageArguments(messageContent!);
     // we send the message via WebSocket to the gateway, which relays it to the canister
-    return this._sendMessage(message);
+    return this._sendMessageToCanister(message);
   }
 
   /**
@@ -383,7 +419,7 @@ export default class IcWebSocket<
    * @param message 
    * @returns {boolean} `true` if the message was sent successfully, `false` otherwise.
    */
-  private async _sendMessage(message: CanisterWsMessageArguments): Promise<boolean> {
+  private async _sendMessageToCanister(message: CanisterWsMessageArguments): Promise<boolean> {
     // we don't need to wait for the response,
     // as we'll receive the ack message via WebSocket from the canister
     try {
@@ -408,7 +444,13 @@ export default class IcWebSocket<
     return true;
   }
 
-  private _decodeIncomingMessage(buf: ArrayBuffer): ClientIncomingMessage {
+  /**
+   * CBOR decodes the incoming message from an ArrayBuffer and returns an object.
+   *
+   * @param {ArrayBuffer} buf - The ArrayBuffer containing the encoded message.
+   * @returns {any} The decoded object.
+   */
+  private _decodeIncomingMessage(buf: ArrayBuffer): any {
     return Cbor.decode(buf);
   }
 
@@ -454,7 +496,7 @@ export default class IcWebSocket<
     this._outgoingSequenceNum++;
 
     const outgoingMessage: WebsocketMessage = {
-      client_key: this._clientKey!,
+      client_key: this._clientKey,
       sequence_num: this._outgoingSequenceNum,
       timestamp: BigInt(Date.now()) * BigInt(10 ** 6),
       content,

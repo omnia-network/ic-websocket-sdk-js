@@ -44,7 +44,6 @@
     "process": "0.11.10",
     "stream-browserify": "3.0.0",
     "ts-jest": "^29.1.1",
-    "tweetnacl": "^1.0.3",
     "typescript": "^5.1.6",
     "util": "0.12.4"
   },
@@ -61,9 +60,9 @@
     "loglevel": "^1.8.1"
   },
   "peerDependencies": {
-    "@dfinity/agent": "^0.19.3",
-    "@dfinity/candid": "^0.19.3",
-    "@dfinity/identity-secp256k1": "^0.19.3",
-    "@dfinity/principal": "^0.19.3"
+    "@dfinity/agent": "^0.20.1",
+    "@dfinity/candid": "^0.20.1",
+    "@dfinity/identity-secp256k1": "^0.20.1",
+    "@dfinity/principal": "^0.20.1"
   }
 }
