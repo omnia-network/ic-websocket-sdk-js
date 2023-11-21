@@ -56,7 +56,7 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
   /**
    * The identity to use for signing messages. If empty, a new random temporary identity will be generated.
    */
-  identity: SignIdentity | Promise<SignIdentity>,
+  identity: SignIdentity,
   /**
    * The IC network url to use for the underlying agent. It can be a local replica URL (e.g. http://localhost:4943) or the IC mainnet URL (https://icp0.io).
    */
@@ -93,7 +93,7 @@ export default class IcWebSocket<
   private readonly _httpAgent: HttpAgent;
   private _wsAgent: WsAgent | null = null;
   private readonly _wsInstance: WebSocket;
-  private readonly _identity: Promise<SignIdentity>;
+  private readonly _identity: SignIdentity;
   private _incomingSequenceNum = BigInt(1);
   private _outgoingSequenceNum = BigInt(0);
   private _isHandshakeCompleted = false;
@@ -101,7 +101,7 @@ export default class IcWebSocket<
   private _incomingMessagesQueue: BaseQueue<ArrayBuffer>;
   private _outgoingMessagesQueue: BaseQueue<Uint8Array>;
   private _ackMessagesQueue: AckMessagesQueue;
-  private _clientKey: ClientKey | null = null;
+  private _clientKey: ClientKey;
   private _gatewayPrincipal: Principal | null = null;
   private _maxCertificateAgeInMinutes = 5;
 
@@ -144,7 +144,12 @@ export default class IcWebSocket<
     if (!(config.identity instanceof SignIdentity)) {
       throw new Error("Identity must be a SignIdentity");
     }
-    this._identity = Promise.resolve(config.identity);
+    this._identity = config.identity;
+
+    this._clientKey = {
+      client_principal: this.getPrincipal(),
+      client_nonce: randomBigInt(),
+    };
 
     if (!config.networkUrl) {
       throw new Error("Network url is required");
@@ -192,8 +197,8 @@ export default class IcWebSocket<
     this._outgoingMessagesQueue.addAndProcess(new Uint8Array(data));
   }
 
-  public async getPrincipal(): Promise<Principal> {
-    return (await this._identity).getPrincipal();
+  public getPrincipal(): Principal {
+    return this._identity.getPrincipal();
   }
 
   public close() {
@@ -239,13 +244,6 @@ export default class IcWebSocket<
     return true;
   }
 
-  private async _initializeClientKey() {
-    this._clientKey = {
-      client_principal: await this.getPrincipal(),
-      client_nonce: randomBigInt(),
-    };
-  }
-
   private _initializeWsAgent() {
     this._wsAgent = new WsAgent({
       identity: this._identity,
@@ -255,7 +253,6 @@ export default class IcWebSocket<
   }
 
   private async _sendOpenMessage() {
-    await this._initializeClientKey();
     this._initializeWsAgent();
 
     logger.debug("Sending open message");
@@ -266,7 +263,7 @@ export default class IcWebSocket<
       this.canisterId,
       this._wsAgent!,
       {
-        client_nonce: this._clientKey!.client_nonce,
+        client_nonce: this._clientKey.client_nonce,
         gateway_principal: this._gatewayPrincipal!,
       }
     );
@@ -333,7 +330,7 @@ export default class IcWebSocket<
       const serviceMessage = decodeWebsocketServiceMessageContent(content as Uint8Array);
       if ("OpenMessage" in serviceMessage) {
         logger.debug("[onWsMessage] Received open message from canister");
-        if (!isClientKeyEq(serviceMessage.OpenMessage.client_key, this._clientKey!)) {
+        if (!isClientKeyEq(serviceMessage.OpenMessage.client_key, this._clientKey)) {
           throw new Error("Client key does not match");
         }
 
@@ -499,7 +496,7 @@ export default class IcWebSocket<
     this._outgoingSequenceNum++;
 
     const outgoingMessage: WebsocketMessage = {
-      client_key: this._clientKey!,
+      client_key: this._clientKey,
       sequence_num: this._outgoingSequenceNum,
       timestamp: BigInt(Date.now()) * BigInt(10 ** 6),
       content,

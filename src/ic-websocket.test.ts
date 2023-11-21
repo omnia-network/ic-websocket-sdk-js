@@ -7,7 +7,7 @@ import { IDL } from "@dfinity/candid";
 import IcWebSocket, { createWsConfig } from "./ic-websocket";
 import { Principal } from "@dfinity/principal";
 import { generateRandomIdentity } from "./identity";
-import { CanisterWsMessageArguments, CanisterWsOpenArguments, WebsocketServiceMessageContent, _WS_CANISTER_SERVICE, decodeWebsocketServiceMessageContent, isClientKeyEq, wsMessageIdl, wsOpenIdl } from "./idl";
+import { CanisterWsMessageArguments, CanisterWsOpenArguments, ClientKey, WebsocketServiceMessageContent, _WS_CANISTER_SERVICE, decodeWebsocketServiceMessageContent, isClientKeyEq, wsMessageIdl, wsOpenIdl } from "./idl";
 import { canisterId, client1Key } from "./test/clients";
 import { INVALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, INVALID_MESSAGE_KEY, VALID_ACK_MESSAGE, VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, VALID_MESSAGE_SEQ_NUM_2, VALID_MESSAGE_SEQ_NUM_3, VALID_OPEN_MESSAGE, encodeHandshakeMessage } from "./test/messages";
 import { sleep } from "./test/helpers";
@@ -126,8 +126,22 @@ describe("IcWebsocket class", () => {
     const icWsConfig = createWsConfig({ ...icWebsocketConfig });
     // @ts-ignore
     icWsConfig.identity = {};
-
     expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Identity must be a SignIdentity");
+
+    const icWsConfig2 = createWsConfig({ ...icWebsocketConfig });
+    // @ts-ignore
+    icWsConfig2.identity = Promise.resolve({});
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Identity must be a SignIdentity");
+
+    const icWsConfig3 = createWsConfig({ ...icWebsocketConfig });
+    // @ts-ignore
+    icWsConfig3.identity = Promise.resolve(generateRandomIdentity());
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Identity must be a SignIdentity");
+  });
+
+  it("passes if the identity is a SignIdentity", () => {
+    const icWsConfig = createWsConfig({ ...icWebsocketConfig });
+    expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).not.toThrowError();
   });
 
   it("throws an error if the networkUrl is not provided", () => {
@@ -136,6 +150,19 @@ describe("IcWebsocket class", () => {
     delete icWsConfig.networkUrl;
 
     expect(() => new IcWebSocket(wsGatewayAddress, undefined, icWsConfig)).toThrowError("Network url is required");
+  });
+
+  it("creates a new client key correctly", () => {
+    const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
+    expect(icWs["_clientKey"]).toMatchObject<ClientKey>({
+      client_principal: icWebsocketConfig.identity.getPrincipal(),
+      client_nonce: expect.any(BigInt),
+    });
+  });
+
+  it("getPrincipal returns the correct principal", () => {
+    const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
+    expect(icWs.getPrincipal().compareTo(icWebsocketConfig.identity.getPrincipal())).toEqual("eq");
   });
 
   it("throws an error if the handshake message is wrong", async () => {
@@ -153,7 +180,6 @@ describe("IcWebsocket class", () => {
     expect(onError).toHaveBeenCalled();
     expect(icWs["_isHandshakeCompleted"]).toEqual(false);
     expect(icWs["_gatewayPrincipal"]).toBeNull();
-    expect(icWs["_clientKey"]).toBeNull();
     expect(icWs["_isConnectionEstablished"]).toEqual(false);
   });
 
@@ -172,7 +198,6 @@ describe("IcWebsocket class", () => {
     expect(onError).not.toHaveBeenCalled();
     expect(icWs["_isHandshakeCompleted"]).toEqual(true);
     expect(icWs["_gatewayPrincipal"]).toEqual(GATEWAY_PRINCIPAL);
-    expect(icWs["_clientKey"]).not.toBeNull();
     expect(icWs["_isConnectionEstablished"]).toEqual(false);
   });
 
@@ -186,7 +211,7 @@ describe("IcWebsocket class", () => {
     const openMessageBytes = await mockWsServer.nextMessage as ArrayBuffer;
 
     // reconstruct the message that the client should send
-    const clientKey = icWs["_clientKey"]!;
+    const clientKey = icWs["_clientKey"];
     const { envelope: { content: openMessageContent } }: WsAgentRequestMessage<CallRequest> = Cbor.decode(openMessageBytes);
 
     expect(canisterId.compareTo(
@@ -241,7 +266,7 @@ describe("IcWebsocket class", () => {
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    const originalClientKey = { ...icWs["_clientKey"]! };
+    const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -275,7 +300,7 @@ describe("IcWebsocket class", () => {
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    const originalClientKey = { ...icWs["_clientKey"]! };
+    const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -311,7 +336,7 @@ describe("IcWebsocket class", () => {
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    const originalClientKey = { ...icWs["_clientKey"]! };
+    const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -353,7 +378,7 @@ describe("IcWebsocket class", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"]! };
+    const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -421,7 +446,7 @@ describe("Messages acknowledgement", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"]! };
+    const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -464,7 +489,7 @@ describe("Messages acknowledgement", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"]! };
+    const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
@@ -511,7 +536,7 @@ describe("Messages acknowledgement", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
-    const originalClientKey = { ...icWs["_clientKey"]! };
+    const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
