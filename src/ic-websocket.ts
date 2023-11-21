@@ -228,7 +228,7 @@ export default class IcWebSocket<
     this._isHandshakeCompleted = true;
 
     try {
-      await this._sendOpenMessage(this._gatewayPrincipal);
+      await this._sendOpenMessage();
     } catch (error) {
       logger.error("[onWsMessage] Handshake message error:", error);
       // if a handshake message fails, we can't continue
@@ -239,27 +239,35 @@ export default class IcWebSocket<
     return true;
   }
 
-  private async _sendOpenMessage(gatewayPrincipal: Principal) {
+  private async _initializeClientKey() {
     this._clientKey = {
       client_principal: await this.getPrincipal(),
       client_nonce: randomBigInt(),
-    }
+    };
+  }
 
+  private _initializeWsAgent() {
     this._wsAgent = new WsAgent({
       identity: this._identity,
       httpAgent: this._httpAgent,
       ws: this._wsInstance,
     });
+  }
+
+  private async _sendOpenMessage() {
+    await this._initializeClientKey();
+    this._initializeWsAgent();
 
     logger.debug("Sending open message");
 
     // Call the canister's ws_open method
+    // at this point, all the class properties that we need are initialized
     await callCanisterWsOpen(
       this.canisterId,
-      this._wsAgent,
+      this._wsAgent!,
       {
-        client_nonce: this._clientKey.client_nonce,
-        gateway_principal: gatewayPrincipal,
+        client_nonce: this._clientKey!.client_nonce,
+        gateway_principal: this._gatewayPrincipal!,
       }
     );
 
@@ -373,7 +381,7 @@ export default class IcWebSocket<
     });
     const keepAliveMessage = this._makeWsMessageArguments(new Uint8Array(bytes), true);
 
-    const sent = await this._sendMessage(keepAliveMessage);
+    const sent = await this._sendMessageToCanister(keepAliveMessage);
     if (!sent) {
       logger.error("[onWsMessage] Keep alive message was not sent");
       this._callOnErrorCallback(new Error("Keep alive message was not sent"));
@@ -406,7 +414,7 @@ export default class IcWebSocket<
   private _sendMessageFromQueue(messageContent: Uint8Array): Promise<boolean> {
     const message = this._makeWsMessageArguments(messageContent!);
     // we send the message via WebSocket to the gateway, which relays it to the canister
-    return this._sendMessage(message);
+    return this._sendMessageToCanister(message);
   }
 
   /**
@@ -414,7 +422,7 @@ export default class IcWebSocket<
    * @param message 
    * @returns {boolean} `true` if the message was sent successfully, `false` otherwise.
    */
-  private async _sendMessage(message: CanisterWsMessageArguments): Promise<boolean> {
+  private async _sendMessageToCanister(message: CanisterWsMessageArguments): Promise<boolean> {
     // we don't need to wait for the response,
     // as we'll receive the ack message via WebSocket from the canister
     try {
@@ -439,7 +447,7 @@ export default class IcWebSocket<
     return true;
   }
 
-    /**
+  /**
    * CBOR decodes the incoming message from an ArrayBuffer and returns an object.
    *
    * @param {ArrayBuffer} buf - The ArrayBuffer containing the encoded message.
