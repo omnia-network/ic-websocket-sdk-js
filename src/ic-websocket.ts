@@ -39,7 +39,7 @@ import { WsAgent } from "./agent";
  * The default expiration time for receiving an ack message from the canister after sending a message.
  * It's **3/2 times** the canister's default send ack period.
  */
-const DEFAULT_ACK_MESSAGE_TIMEOUT_MS = 90000;
+const DEFAULT_ACK_MESSAGE_TIMEOUT_MS = 450_000;
 
 /**
  * Interface to create a new IcWebSocketConfig. For a simple configuration, use {@link createWsConfig}.
@@ -65,7 +65,7 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
    * The expiration (in milliseconds) time for receiving an ack message from the canister after sending a message.
    * If the ack message is not received within this time, the connection will be closed.
    * This parameter should always me **3/2 times or more** the canister's send ack period.
-   * @default 90000 (90 seconds = 3/2 default send ack period on the canister)
+   * @default 450_000 (7.5 minutes = 3/2 default send ack period on the canister)
    */
   ackMessageTimeout?: number;
   /**
