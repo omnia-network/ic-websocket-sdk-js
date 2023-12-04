@@ -1,6 +1,6 @@
 {
   "name": "ic-websocket-js",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "IC WebSocket on the Internet Computer",
   "license": "MIT",
   "repository": {
