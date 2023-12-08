@@ -10,7 +10,7 @@ import { generateRandomIdentity } from "./identity";
 import { CanisterWsMessageArguments, CanisterWsOpenArguments, ClientKey, WebsocketServiceMessageContent, _WS_CANISTER_SERVICE, decodeWebsocketServiceMessageContent, isClientKeyEq, wsMessageIdl, wsOpenIdl } from "./idl";
 import { canisterId, client1Key } from "./test/clients";
 import { INVALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, INVALID_MESSAGE_KEY, VALID_ACK_MESSAGE, VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, VALID_MESSAGE_SEQ_NUM_2, VALID_MESSAGE_SEQ_NUM_3, VALID_OPEN_MESSAGE, encodeHandshakeMessage } from "./test/messages";
-import { sleep } from "./test/helpers";
+import { flushPromises, sleep } from "./test/helpers";
 import { getTestCanisterActor, getTestCanisterActorWithoutMethods, getTestCanisterActorWrongArgs, getTestCanisterActorWrongOpt } from "./test/actor";
 import type { WsAgentRequestMessage } from "./agent/types";
 import { GATEWAY_PRINCIPAL } from "./test/constants";
@@ -226,7 +226,6 @@ describe("IcWebsocket class", () => {
 
     await jest.runAllTimersAsync();
     await expect(mockWsServer.closed).resolves.not.toThrow();
-
     expect(onClose).toHaveBeenCalled();
     expect(icWs.readyState).toEqual(WebSocket.CLOSED);
   });
@@ -284,13 +283,10 @@ describe("IcWebsocket class", () => {
 
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
-    jest.runAllTicks();
 
     // advance the open timeout so that it expires
-    // workaround: call the advanceTimers twice
-    // to make message processing happening in the meantime
-    await jest.advanceTimersByTimeAsync(MAX_ALLOWED_NETWORK_LATENCY_MS);
-    await jest.advanceTimersByTimeAsync(MAX_ALLOWED_NETWORK_LATENCY_MS);
+    await flushPromises(); // make the message processing happen
+    await jest.advanceTimersByTimeAsync(2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
 
     expect(onOpen).toHaveBeenCalled();
     expect(icWs["_isConnectionEstablished"]).toEqual(true);
