@@ -78,12 +78,26 @@ export type CanisterAckMessageContent = {
 export type ClientKeepAliveMessageContent = {
   'last_incoming_sequence_num': bigint,
 };
+export type CloseMessageReason = {
+  WrongSequenceNumber: null,
+} | {
+  InvalidServiceMessage: null,
+} | {
+  KeepAliveTimeout: null,
+} | {
+  ClosedByApplication: null
+};
+export type CanisterCloseMessageContent = {
+  reason: CloseMessageReason,
+};
 export type WebsocketServiceMessageContent = {
   OpenMessage: CanisterOpenMessageContent,
 } | {
   AckMessage: CanisterAckMessageContent,
 } | {
   KeepAliveMessage: ClientKeepAliveMessageContent,
+} | {
+  CloseMessage: CanisterCloseMessageContent,
 };
 
 const CanisterOpenMessageContentIdl = IDL.Record({
@@ -95,10 +109,20 @@ const CanisterAckMessageContentIdl = IDL.Record({
 const ClientKeepAliveMessageContentIdl = IDL.Record({
   'last_incoming_sequence_num': IDL.Nat64,
 });
+const CloseMessageReasonIdl = IDL.Variant({
+  'WrongSequenceNumber': IDL.Null,
+  'InvalidServiceMessage': IDL.Null,
+  'KeepAliveTimeout': IDL.Null,
+  'ClosedByApplication': IDL.Null,
+});
+const CanisterCloseMessageContentIdl = IDL.Record({
+  'reason': CloseMessageReasonIdl,
+})
 const WebsocketServiceMessageContentIdl = IDL.Variant({
   'OpenMessage': CanisterOpenMessageContentIdl,
   'AckMessage': CanisterAckMessageContentIdl,
   'KeepAliveMessage': ClientKeepAliveMessageContentIdl,
+  'CloseMessage': CanisterCloseMessageContentIdl,
 });
 
 export const decodeWebsocketServiceMessageContent = (bytes: Uint8Array): WebsocketServiceMessageContent => {

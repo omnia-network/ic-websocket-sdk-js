@@ -9,6 +9,7 @@ import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 import {
   CanisterAckMessageContent,
+  CanisterCloseMessageContent,
   CanisterWsMessageArguments,
   ClientKeepAliveMessageContent,
   ClientKey,
@@ -371,6 +372,10 @@ export default class IcWebSocket<
         this._outgoingMessagesQueue.enableAndProcess();
       } else if ("AckMessage" in serviceMessage) {
         await this._handleAckMessageFromCanister(serviceMessage.AckMessage);
+      } else if ("CloseMessage" in serviceMessage) {
+        await this._handleCloseMessageFromCanister(serviceMessage.CloseMessage);
+        // we don't have to process any further message (there shouldn't be any anyway)
+        return false;
       } else {
         throw new Error("Invalid service message from canister");
       }
@@ -397,6 +402,17 @@ export default class IcWebSocket<
     }
 
     await this._sendKeepAliveMessage();
+  }
+
+  private async _handleCloseMessageFromCanister(content: CanisterCloseMessageContent): Promise<void> {
+    if ("ClosedByApplication" in content.reason) {
+      logger.debug("[onWsMessage] Received close message from canister. Reason: ClosedByApplication");
+      this._wsInstance.close(4001, "ClosedByApplication");
+    } else {
+      logger.error("[onWsMessage] Received close message from canister. Reason:", content.reason);
+      this._callOnErrorCallback(new Error(`Received close message from canister. Reason: ${content.reason}`));
+      this._wsInstance.close(4000, "Received close message from canister");
+    }
   }
 
   private async _sendKeepAliveMessage(): Promise<void> {
