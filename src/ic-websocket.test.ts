@@ -257,6 +257,8 @@ describe("IcWebsocket class", () => {
   });
 
   // we can't use fake timers here, because we need to wait for the processing of the open message
+  // the workaround suggested at https://github.com/jestjs/jest/issues/2157#issuecomment-897935688
+  // doesn't seem to work deterministically
   // TODO: figure out how to fix this, since it increases a lot the test duration
   it("onopen is called when open message from canister is received", async () => {
     const onOpen = jest.fn();
