@@ -201,6 +201,37 @@ describe("IcWebsocket class", () => {
     expect(icWs["_isConnectionEstablished"]).toEqual(false);
   });
 
+  it("closes the connection if the open message is not received in time", async () => {
+    const onOpen = jest.fn();
+    const onError = jest.fn();
+    const onClose = jest.fn();
+    const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
+    expect(icWs).toBeDefined();
+    icWs.onopen = onOpen;
+    icWs.onerror = onError;
+    icWs.onclose = onClose;
+    await mockWsServer.connected;
+
+    jest.useFakeTimers();
+    mockWsServer.send(encodeHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY));
+
+    // advance the open timeout
+    await jest.advanceTimersByTimeAsync(2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
+
+    expect(icWs["_isConnectionEstablished"]).toEqual(false);
+    expect(onOpen).not.toHaveBeenCalled();
+    const openError = new Error("Open timeout expired before receiving the open message");
+    expect(onError).toHaveBeenCalledWith(new ErrorEvent("error", { error: openError }));
+
+    await jest.runAllTimersAsync();
+    await expect(mockWsServer.closed).resolves.not.toThrow();
+
+    expect(onClose).toHaveBeenCalled();
+    expect(icWs.readyState).toEqual(WebSocket.CLOSED);
+
+    jest.useRealTimers();
+  });
+
   it("creates a new instance and sends the open message", async () => {
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
     expect(icWs).toBeDefined();
@@ -230,30 +261,46 @@ describe("IcWebsocket class", () => {
   it("onopen is called when open message from canister is received", async () => {
     const onOpen = jest.fn();
     const onMessage = jest.fn();
+    const onError = jest.fn();
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
     expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
     icWs.onopen = onOpen;
     icWs.onmessage = onMessage;
+    icWs.onerror = onError;
     await mockWsServer.connected;
-    await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
+
+    jest.useFakeTimers();
+    mockWsServer.send(encodeHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY));
 
     expect(onOpen).not.toHaveBeenCalled();
     expect(icWs["_isConnectionEstablished"]).toEqual(false);
+    expect(onError).not.toHaveBeenCalled();
     expect(onMessage).not.toHaveBeenCalled();
 
     // wait for the open message from the client
+    await jest.advanceTimersToNextTimerAsync(); // needed just to advance the mockWsServer timeouts
     await mockWsServer.nextMessage;
 
-    // workaround to simulate the client identity
-    icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
-    await sleep(100);
+    jest.runAllTicks();
+
+    // advance the open timeout so that it expires
+    // workaround: call the advanceTimers twice
+    // to make message processing happening in the meantime
+    await jest.advanceTimersByTimeAsync(MAX_ALLOWED_NETWORK_LATENCY_MS);
+    await jest.advanceTimersByTimeAsync(MAX_ALLOWED_NETWORK_LATENCY_MS);
 
     expect(onOpen).toHaveBeenCalled();
     expect(icWs["_isConnectionEstablished"]).toEqual(true);
+    expect(onError).not.toHaveBeenCalled();
+    expect(icWs.readyState).toEqual(WebSocket.OPEN);
     // make sure onmessage callback is not called when receiving the first message
     expect(onMessage).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
   });
 
   it("onmessage is called when a valid message is received", async () => {

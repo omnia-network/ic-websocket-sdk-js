@@ -84,7 +84,7 @@ export const safeExecute = async <T>(
   warnMessage: string
 ): Promise<T | undefined> => {
   try {
-    return await fn();
+    return await Promise.resolve(fn());
   } catch (error) {
     logger.warn(warnMessage, error);
   }

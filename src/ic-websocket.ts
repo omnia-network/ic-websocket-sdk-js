@@ -109,6 +109,7 @@ export default class IcWebSocket<
   private _clientKey: ClientKey;
   private _gatewayPrincipal: Principal | null = null;
   private _maxCertificateAgeInMinutes = 5;
+  private _openTimeout: NodeJS.Timeout | null = null;
 
   onclose: ((this: IcWebSocket<S, ApplicationMessageType>, ev: CloseEvent) => any) | null = null;
   onerror: ((this: IcWebSocket<S, ApplicationMessageType>, ev: ErrorEvent) => any) | null = null;
@@ -231,6 +232,27 @@ export default class IcWebSocket<
     this._incomingMessagesQueue.addAndProcess(event.data);
   }
 
+  private _startOpenTimeout() {
+    // the timeout is double the maximum allowed network latency,
+    // because opening the connection involves a message sent by the client and one by the canister
+    this._openTimeout = setTimeout(() => {
+      if (!this._isConnectionEstablished) {
+        logger.error("[onWsOpen] Error: Open timeout expired before receiving the open message");
+        this._callOnErrorCallback(new Error("Open timeout expired before receiving the open message"));
+        this._wsInstance.close(4000, "Open connection timeout");
+      }
+
+      this._openTimeout = null;
+    }, 2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
+  }
+
+  private _cancelOpenTimeout() {
+    if (this._openTimeout) {
+      clearTimeout(this._openTimeout);
+      this._openTimeout = null;
+    }
+  }
+
   private async _handleHandshakeMessage(handshakeMessage: GatewayHandshakeMessage): Promise<boolean> {
     // at this point, we're sure that the gateway_principal is valid
     // because the isGatewayHandshakeMessage function checks it
@@ -239,6 +261,8 @@ export default class IcWebSocket<
 
     try {
       await this._sendOpenMessage();
+
+      this._startOpenTimeout();
     } catch (error) {
       logger.error("[onWsMessage] Handshake message error:", error);
       // if a handshake message fails, we can't continue
@@ -340,6 +364,7 @@ export default class IcWebSocket<
         }
 
         this._isConnectionEstablished = true;
+        this._cancelOpenTimeout();
 
         this._callOnOpenCallback();
 
