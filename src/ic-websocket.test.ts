@@ -10,7 +10,7 @@ import { generateRandomIdentity } from "./identity";
 import { CanisterWsMessageArguments, CanisterWsOpenArguments, ClientKey, WebsocketServiceMessageContent, _WS_CANISTER_SERVICE, decodeWebsocketServiceMessageContent, isClientKeyEq, wsMessageIdl, wsOpenIdl } from "./idl";
 import { canisterId, client1Key } from "./test/clients";
 import { INVALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, INVALID_MESSAGE_KEY, VALID_ACK_MESSAGE, VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, VALID_MESSAGE_SEQ_NUM_2, VALID_MESSAGE_SEQ_NUM_3, VALID_OPEN_MESSAGE, encodeHandshakeMessage } from "./test/messages";
-import { flushPromises, sleep } from "./test/helpers";
+import { sleep } from "./test/helpers";
 import { getTestCanisterActor, getTestCanisterActorWithoutMethods, getTestCanisterActorWrongArgs, getTestCanisterActorWrongOpt } from "./test/actor";
 import type { WsAgentRequestMessage } from "./agent/types";
 import { GATEWAY_PRINCIPAL } from "./test/constants";
@@ -256,6 +256,8 @@ describe("IcWebsocket class", () => {
     });
   });
 
+  // we can't use fake timers here, because we need to wait for the processing of the open message
+  // TODO: figure out how to fix this, since it increases a lot the test duration
   it("onopen is called when open message from canister is received", async () => {
     const onOpen = jest.fn();
     const onMessage = jest.fn();
@@ -269,7 +271,6 @@ describe("IcWebsocket class", () => {
     icWs.onerror = onError;
     await mockWsServer.connected;
 
-    jest.useFakeTimers();
     mockWsServer.send(encodeHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY));
 
     expect(onOpen).not.toHaveBeenCalled();
@@ -278,15 +279,15 @@ describe("IcWebsocket class", () => {
     expect(onMessage).not.toHaveBeenCalled();
 
     // wait for the open message from the client
-    await jest.advanceTimersToNextTimerAsync(); // needed just to advance the mockWsServer timeouts
     await mockWsServer.nextMessage;
 
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
+    // wait for the message to be processed
+    await sleep(100);
 
-    // advance the open timeout so that it expires
-    await flushPromises(); // make the message processing happen
-    await jest.advanceTimersByTimeAsync(2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
+    // wait for the open timeout so that it expires
+    await sleep(2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
 
     expect(onOpen).toHaveBeenCalled();
     expect(icWs["_isConnectionEstablished"]).toEqual(true);
@@ -294,7 +295,7 @@ describe("IcWebsocket class", () => {
     expect(icWs.readyState).toEqual(WebSocket.OPEN);
     // make sure onmessage callback is not called when receiving the first message
     expect(onMessage).not.toHaveBeenCalled();
-  });
+  }, 3 * MAX_ALLOWED_NETWORK_LATENCY_MS);
 
   it("onmessage is called when a valid message is received", async () => {
     const onMessage = jest.fn();
