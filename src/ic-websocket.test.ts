@@ -301,19 +301,16 @@ describe("IcWebsocket class", () => {
     const onError = jest.fn();
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
     expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
     icWs.onmessage = onMessage;
     icWs.onerror = onError;
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    const originalClientKey = { ...icWs["_clientKey"] };
-    // workaround to simulate the client identity
-    icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
     await sleep(100);
-    // set the client key back
-    icWs["_clientKey"] = originalClientKey;
 
     expect(onMessage).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
@@ -334,20 +331,17 @@ describe("IcWebsocket class", () => {
     const onClose = jest.fn();
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
     expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
     icWs.onmessage = onMessage;
     icWs.onerror = onError;
     icWs.onclose = onClose;
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    const originalClientKey = { ...icWs["_clientKey"] };
-    // workaround to simulate the client identity
-    icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
     await sleep(100);
-    // set the client key back
-    icWs["_clientKey"] = originalClientKey;
 
     expect(onMessage).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
@@ -370,20 +364,17 @@ describe("IcWebsocket class", () => {
     const onClose = jest.fn();
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
     expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
     icWs.onmessage = onMessage;
     icWs.onerror = onError;
     icWs.onclose = onClose;
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    const originalClientKey = { ...icWs["_clientKey"] };
-    // workaround to simulate the client identity
-    icWs["_clientKey"] = client1Key;
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
     await sleep(100);
-    // set the client key back
-    icWs["_clientKey"] = originalClientKey;
 
     expect(onMessage).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
@@ -418,6 +409,9 @@ describe("IcWebsocket class", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
+    // we can't use the same worksaround as in the previous tests
+    // because here we need to check the message sent to the canister,
+    // which needs a real signature
     const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
@@ -482,7 +476,6 @@ describe("Messages acknowledgement", () => {
     expect(icWs).toBeDefined();
     // workaround: simulate the client identity
     icWs["_clientKey"] = client1Key;
-
     icWs.onerror = onError;
     icWs.onclose = onClose;
     await mockWsServer.connected;
@@ -530,7 +523,6 @@ describe("Messages acknowledgement", () => {
     expect(icWs).toBeDefined();
     // workaround: simulate the client identity
     icWs["_clientKey"] = client1Key;
-
     icWs.onerror = onError;
     icWs.onclose = onClose;
     await mockWsServer.connected;
@@ -582,7 +574,6 @@ describe("Messages acknowledgement", () => {
     expect(icWs).toBeDefined();
     // workaround: simulate the client identity
     icWs["_clientKey"] = client1Key;
-
     icWs.onmessage = onMessage;
     icWs.onerror = onError;
     icWs.onclose = onClose;
@@ -647,6 +638,9 @@ describe("Messages acknowledgement", () => {
     // wait for the open message from the client
     await mockWsServer.nextMessage;
 
+    // we can't use the same worksaround as in the previous tests
+    // because here we need to check the message sent to the canister,
+    // which needs a real signature
     const originalClientKey = { ...icWs["_clientKey"] };
     // workaround to simulate the client identity
     icWs["_clientKey"] = client1Key;
