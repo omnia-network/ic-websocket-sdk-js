@@ -4,7 +4,7 @@ import { setupServer } from "msw/node";
 import { CallRequest, Cbor, fromHex } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
 
-import IcWebSocket, { createWsConfig } from "./ic-websocket";
+import IcWebSocket, { MAX_ALLOWED_NETWORK_LATENCY_MS, createWsConfig } from "./ic-websocket";
 import { Principal } from "@dfinity/principal";
 import { generateRandomIdentity } from "./identity";
 import { CanisterWsMessageArguments, CanisterWsOpenArguments, ClientKey, WebsocketServiceMessageContent, _WS_CANISTER_SERVICE, decodeWebsocketServiceMessageContent, isClientKeyEq, wsMessageIdl, wsOpenIdl } from "./idl";
@@ -425,102 +425,173 @@ describe("Messages acknowledgement", () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     mockWsServer.close();
   });
 
-  it("fails if messages are not acknowledged in time", async () => {
-    const ackMessageTimeoutMs = 2000;
+  it("fails if messages are never acknowledged", async () => {
+    const ackMessageIntervalMs = 2000;
     const icWsConfig = createWsConfig({
       ...icWebsocketConfig,
-      ackMessageTimeout: ackMessageTimeoutMs,
+      ackMessageIntervalMs,
     });
     const onError = jest.fn();
     const onClose = jest.fn();
+
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWsConfig);
     expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
+
     icWs.onerror = onError;
     icWs.onclose = onClose;
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    // wait for the open message from the client
+    // wait for the ws_open message from the client
     await mockWsServer.nextMessage;
-
-    const originalClientKey = { ...icWs["_clientKey"] };
-    // workaround to simulate the client identity
-    icWs["_clientKey"] = client1Key;
-    // send the open confirmation message from the canister
+    // send the open message to the client
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
-    await sleep(100);
-    // set the client key back
-    icWs["_clientKey"] = originalClientKey;
 
-    // send a random application message
+    // workaround: wait 100ms to make sure that
+    // the client processes the open message
+    await sleep(100);
+
+    // when the client sends a message, it makes the ack timeout start,
+    // so here we have to mock the timers
+    jest.useFakeTimers();
+
+    // send a random application message from the client,
+    // so that the ack timeout starts 
     icWs.send({ text: "test" });
 
     // wait for the second message from the client
+    await jest.advanceTimersToNextTimerAsync(); // needed just to advance the mockWsServer timeouts
     await mockWsServer.nextMessage;
 
-    await sleep(ackMessageTimeoutMs);
+    // make the ack timeout expire
+    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + MAX_ALLOWED_NETWORK_LATENCY_MS);
 
     const ackTimeoutError = new Error(`Ack message timeout. Not received ack for sequence numbers: ${[BigInt(1)]}`);
     expect(onError).toHaveBeenCalledWith(new ErrorEvent("error", { error: ackTimeoutError }));
-    await sleep(10);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("fails if messages are not acknowledged in time", async () => {
+    const ackMessageIntervalMs = 2000;
+    const icWsConfig = createWsConfig({
+      ...icWebsocketConfig,
+      ackMessageIntervalMs,
+    });
+    const onError = jest.fn();
+    const onClose = jest.fn();
+
+    const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWsConfig);
+    expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
+
+    icWs.onerror = onError;
+    icWs.onclose = onClose;
+    await mockWsServer.connected;
+    await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
+
+    // wait for the ws_open message from the client
+    await mockWsServer.nextMessage;
+    // send the open message to the client
+    mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
+
+    // workaround: wait 100ms to make sure that
+    // the client processes the open message
+    await sleep(100);
+
+    // when the client sends a message, it makes the ack timeout start,
+    // so here we have to mock the timers
+    jest.useFakeTimers();
+
+    // send a random application message from the client,
+    // so that the ack timeout starts 
+    icWs.send({ text: "test" });
+
+    // wait for the second message from the client
+    await jest.advanceTimersToNextTimerAsync(); // needed just to advance the mockWsServer timeouts
+    await mockWsServer.nextMessage;
+
+    // make the ack timeout expire
+    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + MAX_ALLOWED_NETWORK_LATENCY_MS);
+
+    // send the ack message from the canister
+    // when the ack timeout is already expired
+    mockWsServer.send(Cbor.encode(VALID_ACK_MESSAGE));
+
+    const ackTimeoutError = new Error(`Ack message timeout. Not received ack for sequence numbers: ${[BigInt(1)]}`);
+    expect(onError).toHaveBeenCalledWith(new ErrorEvent("error", { error: ackTimeoutError }));
     expect(onClose).toHaveBeenCalled();
   });
 
   it("acknowledges messages", async () => {
-    const ackMessageTimeoutMs = 2000;
+    const ackMessageIntervalMs = 2000;
     const icWsConfig = createWsConfig({
       ...icWebsocketConfig,
-      ackMessageTimeout: ackMessageTimeoutMs,
+      ackMessageIntervalMs,
     });
     const onMessage = jest.fn();
     const onError = jest.fn();
     const onClose = jest.fn();
     const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWsConfig);
     expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
+
     icWs.onmessage = onMessage;
     icWs.onerror = onError;
     icWs.onclose = onClose;
     await mockWsServer.connected;
     await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
 
-    // wait for the open message from the client
+    // wait for the ws_open message from the client
     await mockWsServer.nextMessage;
-
-    const originalClientKey = { ...icWs["_clientKey"] };
-    // workaround to simulate the client identity
-    icWs["_clientKey"] = client1Key;
-    // send the open confirmation message from the canister
+    // send the open message to the client
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
+
+    // workaround: wait 100ms to make sure that
+    // the client processes the open message
     await sleep(100);
-    // set the client key back
-    icWs["_clientKey"] = originalClientKey;
+
+    // when the client sends a message, it makes the ack timeout start,
+    // so here we have to mock the timers
+    jest.useFakeTimers();
 
     // send a random application message
+    // so that the ack timeout starts
     icWs.send({ text: "test" });
 
     // wait for the second message from the client
+    await jest.advanceTimersToNextTimerAsync(); // needed just to advance the mockWsServer timeouts
     await mockWsServer.nextMessage;
 
     // send the ack message from the canister
     mockWsServer.send(Cbor.encode(VALID_ACK_MESSAGE));
 
-    // wait until the ack timeout should expire
-    await sleep(ackMessageTimeoutMs);
+    console.log("sent ack message from canister");
 
-    expect(onError).not.toHaveBeenCalled();
+    // make the ack timeout expire
+    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + MAX_ALLOWED_NETWORK_LATENCY_MS);
+
+    // first message has been acknowledged correctly,
+    // as the error only reports the missing ack for the keep alive response
+    const ackTimeoutError = new Error(`Ack message timeout. Not received ack for sequence numbers: ${[BigInt(2)]}`);
+    expect(onError).toHaveBeenCalledWith(new ErrorEvent("error", { error: ackTimeoutError }));
     expect(onClose).not.toHaveBeenCalled();
     // make sure onmessage is not called for service messages
     expect(onMessage).not.toHaveBeenCalled();
   });
 
   it("send an ack message after receiving the ack", async () => {
-    const ackMessageTimeoutMs = 2000;
+    const ackMessageIntervalMs = 2000;
     const icWsConfig = createWsConfig({
       ...icWebsocketConfig,
-      ackMessageTimeout: ackMessageTimeoutMs,
+      ackMessageIntervalMs,
     });
     const onMessage = jest.fn();
     const onError = jest.fn();

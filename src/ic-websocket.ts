@@ -36,10 +36,15 @@ import {
 import { WsAgent } from "./agent";
 
 /**
- * The default expiration time for receiving an ack message from the canister after sending a message.
- * It's **3/2 times** the canister's default send ack period.
+ * The default interval (in milliseconds) at which the canister sends an ack message.
  */
-const DEFAULT_ACK_MESSAGE_TIMEOUT_MS = 450_000;
+const DEFAULT_ACK_MESSAGE_INTERVAL_MS = 300_000;
+/**
+ * The maximum latency allowed between the client and the canister.
+ * 
+ * Used to determine the ack message timeout.
+ */
+export const MAX_ALLOWED_NETWORK_LATENCY_MS = 30_000;
 
 /**
  * Interface to create a new IcWebSocketConfig. For a simple configuration, use {@link createWsConfig}.
@@ -62,12 +67,12 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
    */
   networkUrl: string;
   /**
-   * The expiration (in milliseconds) time for receiving an ack message from the canister after sending a message.
-   * If the ack message is not received within this time, the connection will be closed.
-   * This parameter should always me **3/2 times or more** the canister's send ack period.
-   * @default 450_000 (7.5 minutes = 3/2 default send ack period on the canister)
+   * The interval (in milliseconds) at which the canister sends an ack message.
+   * This parameter must be **equal** to the canister's send ack interval.
+   * 
+   * @default 300_000 (default send ack period on the canister)
    */
-  ackMessageTimeout?: number;
+  ackMessageIntervalMs?: number;
   /**
    * The maximum age of the certificate received from the canister, in minutes. You won't likely need to set this parameter. Used in tests.
    * 
@@ -174,7 +179,7 @@ export default class IcWebSocket<
     });
 
     this._ackMessagesQueue = new AckMessagesQueue({
-      expirationMs: config.ackMessageTimeout || DEFAULT_ACK_MESSAGE_TIMEOUT_MS,
+      expirationMs: (config.ackMessageIntervalMs || DEFAULT_ACK_MESSAGE_INTERVAL_MS) + MAX_ALLOWED_NETWORK_LATENCY_MS,
       timeoutExpiredCallback: this._onAckMessageTimeout.bind(this),
     });
 
