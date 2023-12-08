@@ -55,6 +55,7 @@ describe("IcWebsocket class", () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     mockWsServer.close();
   });
 
@@ -228,8 +229,6 @@ describe("IcWebsocket class", () => {
 
     expect(onClose).toHaveBeenCalled();
     expect(icWs.readyState).toEqual(WebSocket.CLOSED);
-
-    jest.useRealTimers();
   });
 
   it("creates a new instance and sends the open message", async () => {
@@ -299,8 +298,6 @@ describe("IcWebsocket class", () => {
     expect(icWs.readyState).toEqual(WebSocket.OPEN);
     // make sure onmessage callback is not called when receiving the first message
     expect(onMessage).not.toHaveBeenCalled();
-
-    jest.useRealTimers();
   });
 
   it("onmessage is called when a valid message is received", async () => {
