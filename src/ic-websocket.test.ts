@@ -1,20 +1,44 @@
 import WsMockServer from "jest-websocket-mock";
 import { rest } from "msw";
 import { setupServer } from "msw/node";
-import { CallRequest, Cbor, fromHex } from "@dfinity/agent";
+import { CallRequest, Cbor } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
+import { Principal } from "@dfinity/principal";
 
 import IcWebSocket, { MAX_ALLOWED_NETWORK_LATENCY_MS, createWsConfig } from "./ic-websocket";
-import { Principal } from "@dfinity/principal";
 import { generateRandomIdentity } from "./identity";
-import { CanisterWsMessageArguments, CanisterWsOpenArguments, ClientKey, WebsocketServiceMessageContent, _WS_CANISTER_SERVICE, decodeWebsocketServiceMessageContent, isClientKeyEq, wsMessageIdl, wsOpenIdl } from "./idl";
-import { canisterId, client1Key } from "./test/clients";
-import { INVALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, INVALID_MESSAGE_KEY, VALID_ACK_MESSAGE, VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY, VALID_MESSAGE_SEQ_NUM_2, VALID_MESSAGE_SEQ_NUM_3, VALID_OPEN_MESSAGE, encodeHandshakeMessage } from "./test/messages";
-import { sleep } from "./test/helpers";
-import { getTestCanisterActor, getTestCanisterActorWithoutMethods, getTestCanisterActorWrongArgs, getTestCanisterActorWrongOpt } from "./test/actor";
-import type { WsAgentRequestMessage } from "./agent/types";
-import { GATEWAY_PRINCIPAL } from "./test/constants";
+import {
+  CanisterWsMessageArguments,
+  CanisterWsOpenArguments,
+  ClientKey,
+  WebsocketServiceMessageContent,
+  _WS_CANISTER_SERVICE,
+  decodeWebsocketServiceMessageContent,
+  wsMessageIdl,
+  wsOpenIdl,
+} from "./idl";
 import { GatewayHandshakeMessage } from "./types";
+import type { WsAgentRequestMessage } from "./agent/types";
+
+import { canisterId, client1Key } from "./test/clients";
+import {
+  INVALID_HANDSHAKE_MESSAGE_FROM_GATEWAY,
+  INVALID_MESSAGE_KEY,
+  VALID_ACK_MESSAGE,
+  VALID_CLOSE_MESSAGE,
+  VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY,
+  VALID_MESSAGE_SEQ_NUM_3,
+  VALID_OPEN_MESSAGE,
+  encodeHandshakeMessage,
+} from "./test/messages";
+import { sleep } from "./test/helpers";
+import {
+  getTestCanisterActor,
+  getTestCanisterActorWithoutMethods,
+  getTestCanisterActorWrongArgs,
+  getTestCanisterActorWrongOpt,
+} from "./test/actor";
+import { GATEWAY_PRINCIPAL, LOCAL_REPLICA_ROOT_KEY } from "./test/constants";
 
 const wsGatewayAddress = "ws://127.0.0.1:8080";
 // the canister from which the application message was sent (needed to verify the message certificate)
@@ -38,7 +62,7 @@ const mockReplica = setupServer(
       ctx.status(200),
       // this response was generated from the same local replica
       // used to generate the messages below
-      ctx.body(fromHex("d9d9f7a66e69635f6170695f76657273696f6e66302e31382e3068726f6f745f6b65795885308182301d060d2b0601040182dc7c0503010201060c2b0601040182dc7c05030201036100948a091fa3439c49aa8782da536348bba3a525cc0b63c0e202797ae7baf38f615e5375b694818b4a1a5b0fb07242aede15eb79f6454c19c1ee54fd8b9c14dbb06d94df2f2a3cc4f6336f0419680025f4411f0d764aa0b6e9fd246ba71a80fad66c696d706c5f76657273696f6e65302e382e3069696d706c5f68617368784030343366663064393237626337313431643761643630616235646331313934636364303164393761386431633333393632643236663730323461646463336135757265706c6963615f6865616c74685f737461747573676865616c746879706365727469666965645f686569676874181b")),
+      ctx.body(LOCAL_REPLICA_ROOT_KEY),
     );
   }),
 );
@@ -314,16 +338,16 @@ describe("IcWebsocket class", () => {
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
     await sleep(100);
-
     expect(onMessage).not.toHaveBeenCalled();
-    expect(onError).not.toHaveBeenCalled();
+
+    // send the ack message that has sequence number 2
+    mockWsServer.send(Cbor.encode(VALID_ACK_MESSAGE));
+    await sleep(100);
+    expect(onMessage).not.toHaveBeenCalled();
 
     // send an application message from the canister
-    mockWsServer.send(Cbor.encode(VALID_MESSAGE_SEQ_NUM_2));
-
-    // wait for the message to be processed
+    mockWsServer.send(Cbor.encode(VALID_MESSAGE_SEQ_NUM_3));
     await sleep(100);
-
     expect(onMessage).toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
   });
@@ -345,16 +369,12 @@ describe("IcWebsocket class", () => {
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
     await sleep(100);
-
     expect(onMessage).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
 
     // send an application message from the canister
     mockWsServer.send(Cbor.encode(VALID_MESSAGE_SEQ_NUM_3));
-
-    // wait for the message to be processed
     await sleep(100);
-
     expect(onMessage).not.toHaveBeenCalled();
     const seqNumError = new Error("[onWsMessage] Received message sequence number does not match next expected value. Expected: 2, received: 3");
     expect(onError).toHaveBeenCalledWith(new ErrorEvent("error", { error: new Error(`Error receiving message: ${seqNumError}`) }));
@@ -378,16 +398,12 @@ describe("IcWebsocket class", () => {
     // send the open confirmation message from the canister
     mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
     await sleep(100);
-
     expect(onMessage).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
 
     // send an application message from the canister
     mockWsServer.send(Cbor.encode(INVALID_MESSAGE_KEY));
-
-    // wait for the message to be processed
     await sleep(100);
-
     expect(onMessage).not.toHaveBeenCalled();
     const invalidCertificateError = new Error("[onWsMessage] Certificate validation failed");
     expect(onError).toHaveBeenCalledWith(new ErrorEvent("error", { error: new Error(`Error receiving message: ${invalidCertificateError}`) }));
@@ -453,6 +469,47 @@ describe("IcWebsocket class", () => {
     });
     expect(IDL.decode([IDL.Record({ 'text': IDL.Text })], wsMessageArgs[0].msg.content as Uint8Array)[0]).toMatchObject(applicationMessageContent);
     expect(wsMessageArgs[1]).toEqual([]); // check that we're not sending unneeded arguments
+  });
+
+  it("closes the connection if close message is received", async () => {
+    const onMessage = jest.fn();
+    const onError = jest.fn();
+    const onClose = jest.fn();
+    const icWs = new IcWebSocket(wsGatewayAddress, undefined, icWebsocketConfig);
+    expect(icWs).toBeDefined();
+    // workaround: simulate the client identity
+    icWs["_clientKey"] = client1Key;
+    icWs.onmessage = onMessage;
+    icWs.onerror = onError;
+    icWs.onclose = onClose;
+    await mockWsServer.connected;
+    await sendHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY);
+
+    // we need to send the previous messages in order
+    // to not break the sequence number count
+
+    // send the open confirmation message from the canister
+    mockWsServer.send(Cbor.encode(VALID_OPEN_MESSAGE));
+    await sleep(100);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // send the ack message that has sequence number 2
+    mockWsServer.send(Cbor.encode(VALID_ACK_MESSAGE));
+    await sleep(100);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // send an application message from the canister
+    mockWsServer.send(Cbor.encode(VALID_MESSAGE_SEQ_NUM_3));
+    await sleep(100);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // finally, send the close message
+    mockWsServer.send(Cbor.encode(VALID_CLOSE_MESSAGE));
+    await sleep(100);
+    expect(onMessage).toHaveBeenCalledTimes(1); // only with the application message
+    expect(onError).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+    await expect(mockWsServer.closed).resolves.not.toThrow();
   });
 });
 
