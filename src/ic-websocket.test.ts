@@ -5,7 +5,7 @@ import { CallRequest, Cbor } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 
-import IcWebSocket, { MAX_ALLOWED_NETWORK_LATENCY_MS, createWsConfig } from "./ic-websocket";
+import IcWebSocket, { COMMUNICATION_LATENCY_BOUND_MS, createWsConfig } from "./ic-websocket";
 import { generateRandomIdentity } from "./identity";
 import {
   CanisterWsMessageArguments,
@@ -241,7 +241,7 @@ describe("IcWebsocket class", () => {
     mockWsServer.send(encodeHandshakeMessage(VALID_HANDSHAKE_MESSAGE_FROM_GATEWAY));
 
     // advance the open timeout
-    await jest.advanceTimersByTimeAsync(2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
+    await jest.advanceTimersByTimeAsync(2 * COMMUNICATION_LATENCY_BOUND_MS);
 
     expect(icWs["_isConnectionEstablished"]).toEqual(false);
     expect(onOpen).not.toHaveBeenCalled();
@@ -313,7 +313,7 @@ describe("IcWebsocket class", () => {
     await sleep(100);
 
     // wait for the open timeout so that it expires
-    await sleep(2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
+    await sleep(2 * COMMUNICATION_LATENCY_BOUND_MS);
 
     expect(onOpen).toHaveBeenCalled();
     expect(icWs["_isConnectionEstablished"]).toEqual(true);
@@ -321,7 +321,7 @@ describe("IcWebsocket class", () => {
     expect(icWs.readyState).toEqual(WebSocket.OPEN);
     // make sure onmessage callback is not called when receiving the first message
     expect(onMessage).not.toHaveBeenCalled();
-  }, 3 * MAX_ALLOWED_NETWORK_LATENCY_MS);
+  }, 3 * COMMUNICATION_LATENCY_BOUND_MS);
 
   it("onmessage is called when a valid message is received", async () => {
     const onMessage = jest.fn();
@@ -563,7 +563,7 @@ describe("Messages acknowledgement", () => {
     await mockWsServer.nextMessage;
 
     // make the ack timeout expire
-    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + MAX_ALLOWED_NETWORK_LATENCY_MS);
+    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + COMMUNICATION_LATENCY_BOUND_MS);
 
     const ackTimeoutError = new Error(`Ack message timeout. Not received ack for sequence numbers: ${[BigInt(1)]}`);
     expect(onError).toHaveBeenCalledWith(new ErrorEvent("error", { error: ackTimeoutError }));
@@ -610,7 +610,7 @@ describe("Messages acknowledgement", () => {
     await mockWsServer.nextMessage;
 
     // make the ack timeout expire
-    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + MAX_ALLOWED_NETWORK_LATENCY_MS);
+    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + COMMUNICATION_LATENCY_BOUND_MS);
 
     // send the ack message from the canister
     // when the ack timeout is already expired
@@ -667,7 +667,7 @@ describe("Messages acknowledgement", () => {
     console.log("sent ack message from canister");
 
     // make the ack timeout expire
-    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + MAX_ALLOWED_NETWORK_LATENCY_MS);
+    await jest.advanceTimersByTimeAsync(ackMessageIntervalMs + COMMUNICATION_LATENCY_BOUND_MS);
 
     // first message has been acknowledged correctly,
     // as the error only reports the missing ack for the keep alive response

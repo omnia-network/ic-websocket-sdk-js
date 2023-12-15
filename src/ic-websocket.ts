@@ -41,11 +41,11 @@ import { WsAgent } from "./agent";
  */
 const DEFAULT_ACK_MESSAGE_INTERVAL_MS = 300_000;
 /**
- * The maximum latency allowed between the client and the canister.
+ * The maximum communication latency allowed between the client and the canister (same as in the canister).
  * 
  * Used to determine the ack message timeout.
  */
-export const MAX_ALLOWED_NETWORK_LATENCY_MS = 30_000;
+export const COMMUNICATION_LATENCY_BOUND_MS = 30_000;
 
 /**
  * Interface to create a new IcWebSocketConfig. For a simple configuration, use {@link createWsConfig}.
@@ -181,7 +181,7 @@ export default class IcWebSocket<
     });
 
     this._ackMessagesQueue = new AckMessagesQueue({
-      expirationMs: (config.ackMessageIntervalMs || DEFAULT_ACK_MESSAGE_INTERVAL_MS) + MAX_ALLOWED_NETWORK_LATENCY_MS,
+      expirationMs: (config.ackMessageIntervalMs || DEFAULT_ACK_MESSAGE_INTERVAL_MS) + COMMUNICATION_LATENCY_BOUND_MS,
       timeoutExpiredCallback: this._onAckMessageTimeout.bind(this),
     });
 
@@ -244,7 +244,7 @@ export default class IcWebSocket<
       }
 
       this._openTimeout = null;
-    }, 2 * MAX_ALLOWED_NETWORK_LATENCY_MS);
+    }, 2 * COMMUNICATION_LATENCY_BOUND_MS);
   }
 
   private _cancelOpenTimeout() {
