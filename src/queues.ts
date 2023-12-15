@@ -173,13 +173,10 @@ export class AckMessagesQueue {
     }
 
     // for the remaining items in the queue, check if they have expired
-    // if yes, call the callback for the first expired item
-    for (const item of this._queue) {
-      if (Date.now() - item.addedAt >= this._expirationMs) {
-        // if it has expired and is still in the queue,
-        // it means it has not been acked, so we call the callback
-        return this._onTimeoutExpired([item]);
-      }
+    // if yes, call the callback for the expired items
+    const expiredItems = this._queue.filter((item) => Date.now() - item.addedAt >= this._expirationMs);
+    if (expiredItems.length > 0) {
+      return this._onTimeoutExpired(expiredItems);
     }
 
     this._restartLastAckTimeout();

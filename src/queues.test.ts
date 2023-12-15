@@ -5,7 +5,7 @@ describe("BaseQueue", () => {
 
   beforeEach(() => {
     queue = new BaseQueue({
-      itemCallback: (message: string) => true,
+      itemCallback: (_: string) => true,
     });
   });
 
@@ -121,6 +121,7 @@ describe("AckMessagesQueue", () => {
   const expirationMs = 1000;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     queue = new AckMessagesQueue({
       expirationMs,
       timeoutExpiredCallback: jest.fn(),
@@ -140,7 +141,7 @@ describe("AckMessagesQueue", () => {
     });
 
     it("should call the timeoutExpiredCallback for expired items when not receiving any ack", () => {
-      jest.useFakeTimers().setSystemTime(Date.now() + expirationMs + 1);
+      jest.setSystemTime(Date.now() + expirationMs + 1);
       queue.add(BigInt(1));
       jest.advanceTimersByTime(expirationMs + 1);
       expect(queue.last()).toBeNull();
@@ -170,19 +171,18 @@ describe("AckMessagesQueue", () => {
 
     it("should call the timeoutExpiredCallback for expired items when receiving the ack", () => {
       queue.add(BigInt(1));
-      jest.useFakeTimers().setSystemTime(Date.now() + expirationMs + 1);
       queue.add(BigInt(2));
+      queue.add(BigInt(3));
+      jest.setSystemTime(Date.now() + expirationMs + 1);
       queue.ack(BigInt(1));
-      jest.advanceTimersByTime(expirationMs + 1);
       expect(queue.last()).toBeNull();
-      expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(2)]);
+      expect(queue["_timeoutExpiredCallback"]).toHaveBeenCalledWith([BigInt(2), BigInt(3)]);
     });
 
     it("should call the timeoutExpiredCallback for all expired items after not receiving the ack", () => {
       queue.add(BigInt(1));
       queue.add(BigInt(2));
       queue.add(BigInt(3));
-      jest.useFakeTimers();
       queue.ack(BigInt(1));
       jest.advanceTimersByTime(expirationMs);
       expect(queue.last()).toBeNull();

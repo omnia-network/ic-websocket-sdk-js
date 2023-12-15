@@ -9,6 +9,7 @@ import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 import {
   CanisterAckMessageContent,
+  CanisterCloseMessageContent,
   CanisterWsMessageArguments,
   ClientKeepAliveMessageContent,
   ClientKey,
@@ -36,10 +37,15 @@ import {
 import { WsAgent } from "./agent";
 
 /**
- * The default expiration time for receiving an ack message from the canister after sending a message.
- * It's **3/2 times** the canister's default send ack period.
+ * The default interval (in milliseconds) at which the canister sends an ack message.
  */
-const DEFAULT_ACK_MESSAGE_TIMEOUT_MS = 450_000;
+const DEFAULT_ACK_MESSAGE_INTERVAL_MS = 300_000;
+/**
+ * The maximum communication latency allowed between the client and the canister (same as in the canister).
+ * 
+ * Used to determine the ack message timeout.
+ */
+export const COMMUNICATION_LATENCY_BOUND_MS = 30_000;
 
 /**
  * Interface to create a new IcWebSocketConfig. For a simple configuration, use {@link createWsConfig}.
@@ -62,12 +68,12 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
    */
   networkUrl: string;
   /**
-   * The expiration (in milliseconds) time for receiving an ack message from the canister after sending a message.
-   * If the ack message is not received within this time, the connection will be closed.
-   * This parameter should always me **3/2 times or more** the canister's send ack period.
-   * @default 450_000 (7.5 minutes = 3/2 default send ack period on the canister)
+   * The interval (in milliseconds) at which the canister sends an ack message.
+   * This parameter must be **equal** to the canister's send ack interval.
+   * 
+   * @default 300_000 (default send ack period on the canister)
    */
-  ackMessageTimeout?: number;
+  ackMessageIntervalMs?: number;
   /**
    * The maximum age of the certificate received from the canister, in minutes. You won't likely need to set this parameter. Used in tests.
    * 
@@ -104,6 +110,7 @@ export default class IcWebSocket<
   private _clientKey: ClientKey;
   private _gatewayPrincipal: Principal | null = null;
   private _maxCertificateAgeInMinutes = 5;
+  private _openTimeout: NodeJS.Timeout | null = null;
 
   onclose: ((this: IcWebSocket<S, ApplicationMessageType>, ev: CloseEvent) => any) | null = null;
   onerror: ((this: IcWebSocket<S, ApplicationMessageType>, ev: ErrorEvent) => any) | null = null;
@@ -174,7 +181,7 @@ export default class IcWebSocket<
     });
 
     this._ackMessagesQueue = new AckMessagesQueue({
-      expirationMs: config.ackMessageTimeout || DEFAULT_ACK_MESSAGE_TIMEOUT_MS,
+      expirationMs: (config.ackMessageIntervalMs || DEFAULT_ACK_MESSAGE_INTERVAL_MS) + COMMUNICATION_LATENCY_BOUND_MS,
       timeoutExpiredCallback: this._onAckMessageTimeout.bind(this),
     });
 
@@ -226,6 +233,27 @@ export default class IcWebSocket<
     this._incomingMessagesQueue.addAndProcess(event.data);
   }
 
+  private _startOpenTimeout() {
+    // the timeout is double the maximum allowed network latency,
+    // because opening the connection involves a message sent by the client and one by the canister
+    this._openTimeout = setTimeout(() => {
+      if (!this._isConnectionEstablished) {
+        logger.error("[onWsOpen] Error: Open timeout expired before receiving the open message");
+        this._callOnErrorCallback(new Error("Open timeout expired before receiving the open message"));
+        this._wsInstance.close(4000, "Open connection timeout");
+      }
+
+      this._openTimeout = null;
+    }, 2 * COMMUNICATION_LATENCY_BOUND_MS);
+  }
+
+  private _cancelOpenTimeout() {
+    if (this._openTimeout) {
+      clearTimeout(this._openTimeout);
+      this._openTimeout = null;
+    }
+  }
+
   private async _handleHandshakeMessage(handshakeMessage: GatewayHandshakeMessage): Promise<boolean> {
     // at this point, we're sure that the gateway_principal is valid
     // because the isGatewayHandshakeMessage function checks it
@@ -234,6 +262,8 @@ export default class IcWebSocket<
 
     try {
       await this._sendOpenMessage();
+
+      this._startOpenTimeout();
     } catch (error) {
       logger.error("[onWsMessage] Handshake message error:", error);
       // if a handshake message fails, we can't continue
@@ -335,12 +365,17 @@ export default class IcWebSocket<
         }
 
         this._isConnectionEstablished = true;
+        this._cancelOpenTimeout();
 
         this._callOnOpenCallback();
 
         this._outgoingMessagesQueue.enableAndProcess();
       } else if ("AckMessage" in serviceMessage) {
         await this._handleAckMessageFromCanister(serviceMessage.AckMessage);
+      } else if ("CloseMessage" in serviceMessage) {
+        await this._handleCloseMessageFromCanister(serviceMessage.CloseMessage);
+        // we don't have to process any further message (there shouldn't be any anyway)
+        return false;
       } else {
         throw new Error("Invalid service message from canister");
       }
@@ -367,6 +402,17 @@ export default class IcWebSocket<
     }
 
     await this._sendKeepAliveMessage();
+  }
+
+  private async _handleCloseMessageFromCanister(content: CanisterCloseMessageContent): Promise<void> {
+    if ("ClosedByApplication" in content.reason) {
+      logger.debug("[onWsMessage] Received close message from canister. Reason: ClosedByApplication");
+      this._wsInstance.close(4001, "ClosedByApplication");
+    } else {
+      logger.error("[onWsMessage] Received close message from canister. Reason:", content.reason);
+      this._callOnErrorCallback(new Error(`Received close message from canister. Reason: ${content.reason}`));
+      this._wsInstance.close(4000, "Received close message from canister");
+    }
   }
 
   private async _sendKeepAliveMessage(): Promise<void> {
