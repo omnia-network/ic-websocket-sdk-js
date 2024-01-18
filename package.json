@@ -48,7 +48,7 @@
     "util": "0.12.4"
   },
   "engines": {
-    "node": "^14 || ^16 || ^18"
+    "node": "^12 || ^14 || ^16 || >=17"
   },
   "browserslist": [
     "last 2 chrome version",
