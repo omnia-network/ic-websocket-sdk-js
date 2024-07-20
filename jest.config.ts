@@ -155,6 +155,8 @@ const config: Config = {
   testEnvironmentOptions: {
     // set the url to the local IC replica
     url: "http://127.0.0.1:4943",
+    // see https://mswjs.io/docs/migrations/1.x-to-2.x#cannot-find-module-mswnode-jsdom
+    customExportConditions: [''],
   },
 
   // Adds a location field to test results
