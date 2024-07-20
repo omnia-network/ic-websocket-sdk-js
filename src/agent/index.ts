@@ -3,10 +3,8 @@ import {
   HttpAgent,
   IdentityInvalidError,
   makeNonce,
-  requestIdOf,
   SignIdentity,
   Cbor,
-  concat,
   Expiry,
   CallRequest,
   Endpoint,
@@ -21,8 +19,6 @@ import {
   WsAgentSubmitRequest,
 } from './types';
 import { makeWsNonceTransform } from './transforms';
-
-const domainSeparator = new TextEncoder().encode('\x0Aic-request');
 
 // Default delta for ingress expiry is 5 minutes.
 const DEFAULT_INGRESS_EXPIRY_DELTA_IN_MSECS = 5 * 60 * 1000;
