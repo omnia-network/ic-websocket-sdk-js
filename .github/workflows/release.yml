@@ -1,22 +1,13 @@
-name: Release ic-websocket-sdk-js
+name: Publish ic-websocket-sdk-js
 
-# only run when the tests complete
+# only run when a release is published
 on:
-  workflow_run:
-    workflows: [ic-websocket-sdk-js tests]
-    types:
-      - completed
-    branches:
-      - main
+  release:
+    types: [published]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # only run if the tests were successful
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    outputs:
-      type: ${{ steps.npm-publish.outputs.type }}
-      version: ${{ steps.npm-publish.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,30 +19,3 @@ jobs:
         id: npm-publish
         with:
           token: ${{ secrets.NPM_TOKEN }}
-
-  tag:
-    needs: publish
-    runs-on: ubuntu-latest
-    if: ${{ needs.publish.outputs.type }}
-    outputs:
-      version: ${{ steps.tag_version.outputs.new_tag }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Bump version and push tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          custom_tag: ${{ needs.publish.outputs.version }}
-
-  release:
-    needs: tag
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ needs.tag.outputs.version }}
