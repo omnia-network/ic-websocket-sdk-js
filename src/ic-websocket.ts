@@ -1,5 +1,4 @@
 import {
-  Actor,
   ActorSubclass,
   Cbor,
   HttpAgent,
@@ -60,11 +59,13 @@ export interface IcWebSocketConfig<S extends _WS_CANISTER_SERVICE> {
    */
   canisterActor: ActorSubclass<S>;
   /**
-   * The identity to use for signing messages. If empty, a new random temporary identity will be generated.
+   * The identity to use for signing messages.
+   * If you don't want to use an identity (e.g. your users are anonymous), you can use the `generateRandomIdentity`
+   * helper function exported by this package to generate a new temporary identity.
    */
   identity: SignIdentity,
   /**
-   * The IC network url to use for the underlying agent. It can be a local replica URL (e.g. http://localhost:4943) or the IC mainnet URL (https://icp0.io).
+   * The IC network url to use for the underlying agent. It can be a local replica URL (e.g. http://localhost:4943) or the IC mainnet URL (https://icp-api.io).
    */
   networkUrl: string;
   /**
@@ -162,11 +163,13 @@ export default class IcWebSocket<
       throw new Error("Network url is required");
     }
 
-    this._httpAgent = new HttpAgent({
+    this._httpAgent = HttpAgent.createSync({
       host: config.networkUrl,
       identity: this._identity,
     });
-    if (this._httpAgent.isLocal()) {
+    // follow the same logic of the HttpAgent to decide whether to fetch the root key or not
+    // see https://github.com/dfinity/agent-js/blob/ed4f2d0a204bb2737d2bc490dcbcabb8a87a8051/packages/agent/src/agent/http/index.ts#L336C9-L336C55
+    if (this._httpAgent.host.toString() !== 'https://icp-api.io') {
       void this._httpAgent.fetchRootKey();
     }
 

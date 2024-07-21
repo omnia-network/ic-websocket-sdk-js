@@ -1,5 +1,5 @@
 import WsMockServer from "jest-websocket-mock";
-import { rest } from "msw";
+import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { CallRequest, Cbor } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
@@ -57,13 +57,12 @@ const icWebsocketConfig = createWsConfig({
 //// Mock Servers
 let mockWsServer: WsMockServer;
 const mockReplica = setupServer(
-  rest.get(`${icNetworkUrl}/api/v2/status`, (_req, res, ctx) => {
-    return res(
-      ctx.status(200),
-      // this response was generated from the same local replica
-      // used to generate the messages below
-      ctx.body(LOCAL_REPLICA_ROOT_KEY),
-    );
+  http.get(`${icNetworkUrl}/api/v2/status`, () => {
+    // this response was generated from the same local replica
+    // used to generate the messages below
+    return HttpResponse.arrayBuffer(LOCAL_REPLICA_ROOT_KEY, {
+      status: 200,
+    });
   }),
 );
 mockReplica.listen();

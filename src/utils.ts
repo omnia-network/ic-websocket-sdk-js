@@ -5,6 +5,7 @@ import {
   HashTree,
   HttpAgent,
   lookup_path,
+  lookupResultToBuffer,
   reconstruct,
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
@@ -38,11 +39,12 @@ export const isMessageBodyValid = async (
 
   const hashTree = Cbor.decode<HashTree>(tree);
   const reconstructed = await reconstruct(hashTree);
-  const witness = cert.lookup([
+  const witnessLookupResult = cert.lookup([
     "canister",
     canisterId.toUint8Array(),
     "certified_data"
   ]);
+  const witness = lookupResultToBuffer(witnessLookupResult);
 
   if (!witness) {
     throw new Error(
@@ -58,11 +60,13 @@ export const isMessageBodyValid = async (
 
   // Next, calculate the SHA of the content.
   const sha = await crypto.subtle.digest("SHA-256", body);
-  let treeSha = lookup_path(["websocket", path], hashTree);
+  let treeShaLookupResult = lookup_path(["websocket", path], hashTree);
+  let treeSha = lookupResultToBuffer(treeShaLookupResult);
 
   if (!treeSha) {
     // Allow fallback to index path.
-    treeSha = lookup_path(["websocket"], hashTree);
+    treeShaLookupResult = lookup_path(["websocket"], hashTree);
+    treeSha = lookupResultToBuffer(treeShaLookupResult);
   }
 
   if (!treeSha) {
