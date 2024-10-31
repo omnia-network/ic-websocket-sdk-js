@@ -1,11 +1,5 @@
-import "isomorphic-fetch";
 import crypto from "isomorphic-webcrypto";
-import util from 'util';
-
-// @ts-ignore
-global?.TextEncoder = util.TextEncoder;
-// @ts-ignore
-global?.TextDecoder = util.TextDecoder;
+import { TransformStream } from "web-streams-polyfill";
 
 Object.defineProperty(globalThis, 'crypto', {
   value: {
@@ -13,3 +7,5 @@ Object.defineProperty(globalThis, 'crypto', {
     subtle: crypto.subtle,
   }
 });
+
+global.TransformStream = TransformStream;
