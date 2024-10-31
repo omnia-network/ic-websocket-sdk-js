@@ -16,9 +16,9 @@ const messageToVerify: ClientIncomingMessage = {
   tree: new Uint8Array(fromHex("d9d9f7830249776562736f636b657483025854737164666c2d6d72346b6d2d3268666a792d67616a716f2d78717668372d6866346d662d6e726134692d336974366c2d6e656177342d736f6f6c772d7461655f303030303030303030303030303030303030303082035820215b2aae42ccf90c6fd928fec029d0b9308e97d0c40f8772100a30097b004bb5")),
 };
 // the max age of the certificate. Since we're using pre-generated certificates, we need to set it really far in the future
-const maxCertificateAgeInMinutes = 60 * 24 * 365; // 1 year
+const maxCertificateAgeInMinutes = 5 * 60 * 24 * 365; // 5 years
 
-const agent = new HttpAgent();
+const agent = HttpAgent.createSync();
 agent.rootKey = localReplicaRootKey;
 
 describe("Utils of the IcWebSocket", () => {
@@ -123,7 +123,7 @@ describe("Utils of the IcWebSocket", () => {
 
 describe("safeExecute", () => {
   beforeEach(() => {
-    jest.spyOn(logger, "warn").mockImplementation(() => {});
+    jest.spyOn(logger, "warn").mockImplementation(() => { });
   });
 
   it("should execute a synchronous function safely", async () => {
