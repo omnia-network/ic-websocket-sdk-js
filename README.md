@@ -16,14 +16,16 @@ Refer to the [ic_websocket_example](https://github.com/omnia-network/ic_websocke
 
 ## Development
 
+Make sure you have [pnpm](https://pnpm.io/) installed.
+
 The **ic-websocket-sdk-js** library implementation can be found in the [src](./src/) folder.
 
 ### Testing
 
 ```bash
-npm install
+pnpm install
 
-npm test
+pnpm test
 ```
 
 ## License
