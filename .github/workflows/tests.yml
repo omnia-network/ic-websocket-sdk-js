@@ -6,24 +6,15 @@ on:
     branches:
       - main
   pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
 
 jobs:
   tests:
-    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "npm"
-          cache-dependency-path: "package-lock.json"
-      - name: Install dependencies
-        run: npm install
+
+      - name: Setup NodeJS
+        uses: ./.github/actions/setup-node
+
       - name: Run tests
-        run: npm test
+        run: pnpm test
