@@ -5,7 +5,7 @@ import { CallRequest, Cbor } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 
-import IcWebSocket, { COMMUNICATION_LATENCY_BOUND_MS, createWsConfig } from "./ic-websocket";
+import { IcWebSocket, COMMUNICATION_LATENCY_BOUND_MS, createWsConfig } from "./ic-websocket";
 import { generateRandomIdentity } from "./identity";
 import {
   CanisterWsMessageArguments,
@@ -38,7 +38,7 @@ import {
   getTestCanisterActorWrongArgs,
   getTestCanisterActorWrongOpt,
 } from "./test/actor";
-import { GATEWAY_PRINCIPAL, LOCAL_REPLICA_ROOT_KEY } from "./test/constants";
+import { GATEWAY_PRINCIPAL, LOCAL_REPLICA_ROOT_KEY, MAX_CERTIFICATE_AGE_IN_MINUTES } from "./test/constants";
 
 const wsGatewayAddress = "ws://127.0.0.1:8080";
 // the canister from which the application message was sent (needed to verify the message certificate)
@@ -51,7 +51,7 @@ const icWebsocketConfig = createWsConfig({
   canisterActor: testCanisterActor,
   networkUrl: icNetworkUrl,
   identity: generateRandomIdentity(),
-  maxCertificateAgeInMinutes: 60 * 24 * 365, // 1 year. Since we're using pre-generated certificates, we need to set it really far in the future
+  maxCertificateAgeInMinutes: MAX_CERTIFICATE_AGE_IN_MINUTES,
 });
 
 //// Mock Servers

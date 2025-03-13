@@ -20,7 +20,7 @@ import {
   extractApplicationMessageIdlFromActor,
   isClientKeyEq,
 } from "./idl";
-import logger from "./logger";
+import { logger } from "./logger";
 import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import {
   isClientIncomingMessage,
@@ -90,7 +90,7 @@ export const createWsConfig = <S extends _WS_CANISTER_SERVICE>(c: IcWebSocketCon
 
 type WsParameters = ConstructorParameters<typeof WebSocket>;
 
-export default class IcWebSocket<
+export class IcWebSocket<
   S extends _WS_CANISTER_SERVICE,
   ApplicationMessageType = GetApplicationMessageType<S>
 > {
