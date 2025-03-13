@@ -20,7 +20,7 @@ import {
   extractApplicationMessageIdlFromActor,
   isClientKeyEq,
 } from "./idl";
-import logger from "./logger";
+import { logger } from "./logger";
 import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import {
   isClientIncomingMessage,

@@ -2,7 +2,7 @@ import { HttpAgent, fromHex } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { isMessageBodyValid, randomBigInt, safeExecute } from "./utils";
 import { ClientIncomingMessage } from "./types";
-import logger from "./logger";
+import { logger } from "./logger";
 import { MAX_CERTIFICATE_AGE_IN_MINUTES } from "./test/constants";
 
 // the canister from which the correct data were generated
