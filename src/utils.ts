@@ -9,7 +9,7 @@ import {
   reconstruct,
 } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
-import logger from "./logger";
+import { logger } from "./logger";
 
 const areBuffersEqual = (buf1: ArrayBuffer, buf2: ArrayBuffer): boolean => {
   return compare(buf1, buf2) === 0;
