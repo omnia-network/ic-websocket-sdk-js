@@ -43,8 +43,8 @@ importers:
         specifier: ^3.1.0
         version: 3.1.0
       dotenv:
-        specifier: ^16.4.5
-        version: 16.4.5
+        specifier: ^16.4.7
+        version: 16.4.7
       hdkey:
         specifier: ^2.1.0
         version: 2.1.0
@@ -2077,8 +2077,8 @@ packages:
     resolution: {integrity: sha512-7GO6HghkA5fYG9TYnNxi14/7K9f5occMlp3zXAuSxn7CKCxt9xbNWG7yF8hTCSUchlfWSe3uLmlPfigevRItzQ==}
     engines: {node: '>=12'}
 
-  dotenv@16.4.5:
-    resolution: {integrity: sha512-ZmdL2rui+eB2YwhsWzjInR8LldtZHGDoQ1ugH85ppHKwpUHL7j7rN0Ti9NCnGiQbhaZ11FpR+7ao1dNsmduNUg==}
+  dotenv@16.4.7:
+    resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
     engines: {node: '>=12'}
 
   ee-first@1.1.1:
@@ -7611,7 +7611,7 @@ snapshots:
   dotenv@16.0.3:
     optional: true
 
-  dotenv@16.4.5: {}
+  dotenv@16.4.7: {}
 
   ee-first@1.1.1:
     optional: true

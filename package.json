@@ -30,7 +30,7 @@
     "@types/jest": "^29.5.14",
     "babel-jest": "^29.7.0",
     "bip39": "^3.1.0",
-    "dotenv": "^16.4.5",
+    "dotenv": "^16.4.7",
     "hdkey": "^2.1.0",
     "isomorphic-webcrypto": "^2.3.8",
     "jest": "^29.7.0",
