@@ -5,7 +5,7 @@ import { CallRequest, Cbor } from "@dfinity/agent";
 import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 
-import IcWebSocket, { COMMUNICATION_LATENCY_BOUND_MS, createWsConfig } from "./ic-websocket";
+import { IcWebSocket, COMMUNICATION_LATENCY_BOUND_MS, createWsConfig } from "./ic-websocket";
 import { generateRandomIdentity } from "./identity";
 import {
   CanisterWsMessageArguments,

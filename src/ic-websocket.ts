@@ -90,7 +90,7 @@ export const createWsConfig = <S extends _WS_CANISTER_SERVICE>(c: IcWebSocketCon
 
 type WsParameters = ConstructorParameters<typeof WebSocket>;
 
-export default class IcWebSocket<
+export class IcWebSocket<
   S extends _WS_CANISTER_SERVICE,
   ApplicationMessageType = GetApplicationMessageType<S>
 > {
